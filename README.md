@@ -1,4 +1,9 @@
-GPGPU Exam Project
+GPGPU Mesh Smoothing
 
-Calanna Daniele & Torrisi Riccardo
+OpenCL & OpenGL Project
+Coded in C & C++
+
+Developers:
+ - Calanna Daniele
+ - Torrisi Riccardo
 
