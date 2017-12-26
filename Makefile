@@ -1,7 +1,7 @@
 CFLAGS=-O3 -march=native -g -Wall -Wextra
 
-LIB:= -L"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.0\lib\x64"
-INC:= -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v9.0\include" -I include
+LIB:= -L"lib\x64"
+INC:= -I include
 
 PROG=meshsmooth
 
