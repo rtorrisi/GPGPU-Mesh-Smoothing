@@ -44,10 +44,18 @@ void loadOBJFile(std::string path){
 			obj_vertexArray.push_back(vertex);
 		} else if ( strcmp( lineHeader, "f" ) == 0 ){
 			unsigned int vertexIndex[3], uvIndex[3], normalIndex[3];
-			int matches = fscanf(file, "%d//%d %d//%d %d//%d\n", &vertexIndex[0], &normalIndex[0], &vertexIndex[1], &normalIndex[1], &vertexIndex[2], &normalIndex[2] );
-			if (matches != 6){
-				printf("File can't be read by our simple parser : ( Try exporting with other options\n");
-				return;
+			if(path == HUMAN){
+				int matches = fscanf(file, "%d//%d %d//%d %d//%d\n", &vertexIndex[0], &normalIndex[0], &vertexIndex[1], &normalIndex[1], &vertexIndex[2], &normalIndex[2] );
+				if (matches != 6){
+					printf("File can't be read by our simple parser : ( Try exporting with other options\n");
+					return;
+				}
+			} else {
+				int matches = fscanf(file, "%d/%d/%d %d/%d/%d %d/%d/%d\n", &vertexIndex[0], &uvIndex[0], &normalIndex[0], &vertexIndex[1], &uvIndex[1], &normalIndex[1], &vertexIndex[2], &uvIndex[2], &normalIndex[2] );
+				if (matches != 9){
+					printf("File can't be read by our simple parser : ( Try exporting with other options\n");
+					return;
+				}				
 			}
 			vertexIndices.push_back(vertexIndex[0]);
 			vertexIndices.push_back(vertexIndex[1]);
@@ -135,7 +143,7 @@ cl_event init(cl_command_queue que, cl_kernel init_k, cl_mem cl_vertexArray, cl_
 
 int main(int argc, char *argv[]) {
 
-	loadOBJFile(HUMAN);
+	loadOBJFile(DRAGON);
 	int nels = obj_vertexArray.size();
 	const size_t memsize = 4*nels*sizeof(float);
 
