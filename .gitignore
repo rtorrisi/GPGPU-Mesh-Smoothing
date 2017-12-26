@@ -1,0 +1,7 @@
+#file to ignore
+*.o
+*.exe
+*.bat
+
+#folder to ignore
+/Smoothing_Papers
