@@ -1,0 +1,9 @@
+kernel void init(global float4 * restrict vertexArray, global float4 * restrict vertexResult, int nels)
+{
+	int i = get_global_id(0);
+	if(i >= nels ) return;
+	float4 vertex = vertexArray[i];
+	vertexResult[i] = vertex;
+	//printf("vertex %d -> %f / %f / %f \n", i, vertex.x, vertex.y, vertex.z);
+}
+
