@@ -60,18 +60,19 @@ void loadOBJFile(std::string path, float *& vertex4Array, int &nels){
 		}
 	}
 	
-	// Init nels with number of vertex in .obj file
+	// Init nels & vertex4Array
 	nels = obj_vertexArray.size();
+	vertex4Array = new float[4*nels];
 	
 	int i=0;
-	vertex4Array = new float[4*obj_vertexArray.size()];
 	for(glm::vec3 vertex : obj_vertexArray){
 		vertex4Array[i++] = vertex.x;
 		vertex4Array[i++] = vertex.y;
 		vertex4Array[i++] = vertex.z;
 		vertex4Array[i++] = 0.0f;
 	}
-
+	
+	// Algorithm to discover adjacents vertex for each vertex
 	
 	std::vector< unsigned int >* adjacents = new std::vector< unsigned int >[obj_vertexArray.size()];
 
@@ -117,7 +118,7 @@ void loadOBJFile(std::string path, float *& vertex4Array, int &nels){
 	#endif
 }
 
-cl_event init(cl_command_queue que, cl_kernel init_k, cl_mem cl_vertex4Array, cl_int nels) {
+cl_event init(cl_command_queue queue, cl_kernel init_k, cl_mem cl_vertex4Array, cl_int nels) {
 	size_t gws[] = { round_mul_up(nels, preferred_wg_init) };
 	cl_event init_evt;
 	cl_int err;
@@ -130,7 +131,7 @@ cl_event init(cl_command_queue que, cl_kernel init_k, cl_mem cl_vertex4Array, cl
 	err = clSetKernelArg(init_k, 1, sizeof(nels), &nels);
 	ocl_check(err, "set init arg 1");
 
-	err = clEnqueueNDRangeKernel(que, init_k,
+	err = clEnqueueNDRangeKernel(queue, init_k,
 		1, NULL, gws, NULL, /* griglia di lancio */
 		0, NULL, /* waiting list */
 		&init_evt);
@@ -148,23 +149,23 @@ int main(int argc, char *argv[]) {
 
 	/* Hic sunt leones */
 	cl_int err;
-	cl_platform_id p = select_platform();
-	cl_device_id deviceID = select_device(p);
-	cl_context context = create_context(p, deviceID);
-	cl_command_queue que = create_queue(context, deviceID);
-	cl_program prog = create_program(OCL_FILENAME, context, deviceID);
+	cl_platform_id platformID = select_platform();
+	cl_device_id deviceID = select_device(platformID);
+	cl_context context = create_context(platformID, deviceID);
+	cl_command_queue queue = create_queue(context, deviceID);
+	cl_program program = create_program(OCL_FILENAME, context, deviceID);
 	
 	cl_mem cl_vertex4Array = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertex4Array, &err);
 	
 	
 	// Extract kernels
-	cl_kernel init_k = clCreateKernel(prog, "init", &err);
+	cl_kernel init_k = clCreateKernel(program, "init", &err);
 	ocl_check(err, "create kernel init");
 
 	// Set preferred_wg size from device info
 	err = clGetKernelWorkGroupInfo(init_k, deviceID, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(preferred_wg_init), &preferred_wg_init, NULL);
 	
-	cl_event init_evt = init(que, init_k, cl_vertex4Array, nels);
+	cl_event init_evt = init(queue, init_k, cl_vertex4Array, nels);
 
 	err = clWaitForEvents(1, &init_evt);
 	ocl_check(err, "clWaitForEvents");
