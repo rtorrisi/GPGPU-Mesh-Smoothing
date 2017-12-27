@@ -3,6 +3,6 @@ kernel void init(global float4 * restrict vertex4Array, int nels)
 	int i = get_global_id(0);
 	if(i >= nels ) return;
 	float4 vertex = vertex4Array[i];
-	//printf("vertex %d -> %f / %f / %f \n", i, vertex.x, vertex.y, vertex.z);
+	//printf("vertex %d -> %f / %f / %f   #adj -> %f\n", i, vertex.x, vertex.y, vertex.z, vertex.w);
 }
 
