@@ -60,21 +60,12 @@ void loadOBJFile(std::string path, float *& vertex4Array, int &nels){
 		}
 	}
 	
-	// Init nels & vertex4Array
+	// Init number of vertex
 	nels = obj_vertexArray.size();
-	vertex4Array = new float[4*nels];
-	
-	int i=0;
-	for(glm::vec3 vertex : obj_vertexArray){
-		vertex4Array[i++] = vertex.x;
-		vertex4Array[i++] = vertex.y;
-		vertex4Array[i++] = vertex.z;
-		vertex4Array[i++] = 0.0f;
-	}
 	
 	// Algorithm to discover adjacents vertex for each vertex
 	
-	std::vector< unsigned int >* adjacents = new std::vector< unsigned int >[obj_vertexArray.size()];
+	std::vector< unsigned int >* adjacents = new std::vector< unsigned int >[nels];
 
 	for(int i=0; i<faceVertexIndices.size(); i+=3){
 		unsigned int vertexID1 = faceVertexIndices[i] - 1;
@@ -105,6 +96,16 @@ void loadOBJFile(std::string path, float *& vertex4Array, int &nels){
 			adjacent3->push_back(vertexID2);
 	}
 
+	// Init vertex4Array
+	vertex4Array = new float[4*nels];
+	
+	for(int i=0; i<nels; i++) {
+		glm::vec3 *vertex = &obj_vertexArray[i];
+		vertex4Array[4*i] = vertex->x;
+		vertex4Array[4*i+1] = vertex->y;
+		vertex4Array[4*i+2] = vertex->z;
+		vertex4Array[4*i+3] = adjacents[i].size();
+	}
 
 
 	#if 0
@@ -143,7 +144,7 @@ int main(int argc, char *argv[]) {
 
 	int nels;
 	float* vertex4Array;
-	loadOBJFile(DRAGON, vertex4Array, nels);
+	loadOBJFile(CUBE, vertex4Array, nels);
 	const size_t memsize = nels*4*sizeof(float);
 	
 
