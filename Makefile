@@ -7,13 +7,16 @@ PROG=meshsmooth
 
 SRC=src
 
-output: $(SRC)/$(PROG).o
+$(PROG).exe: $(SRC)/$(PROG).o
 	g++ $(SRC)/$(PROG).o $(LIB) -lOpenCL -o $(PROG)
 
 $(SRC)/$(PROG).o: $(SRC)/$(PROG).cpp
 	g++ -c $(INC) $(SRC)/$(PROG).cpp -o $(SRC)/$(PROG).o
 
+execute:$(PROG).exe
+	$(PROG).exe 
+
 clean:
 	del $(SRC)/*.o *.exe
 
-.PHONY: clean
+.PHONY: clean execute

@@ -20,7 +20,7 @@
 
 size_t preferred_wg_init;
 
-void loadOBJFile(std::string path, int &nels, float *& vertex4Array){
+void loadOBJFile(std::string path, int &nels, float *& vertex4Array, unsigned int* &adjArray, size_t &adjmemsize){
 	std::vector< glm::vec3 > obj_vertexArray;
 	std::vector< unsigned int > faceVertexIndices;
 
@@ -109,16 +109,22 @@ void loadOBJFile(std::string path, int &nels, float *& vertex4Array){
 
 		unsigned int* adjIndexPtr = (unsigned int*)last4Byte;
 		*adjIndexPtr = ((unsigned int)currentAdjIndex)<<8;
-		
-		unsigned char* numOfAdjPtr = (unsigned char*)last4Byte+3;
-		//*numOfAdjPtr = (unsigned char)adjacents[i].size();
+		*adjIndexPtr += (unsigned int)adjacents[i].size();
 
-		//printf("%d\n", adjIndexPtr);
-		//printf("%d\n", (*adjIndexPtr)>>8);
+		//printf("indexOfAdjs  ->  %d\n", (*adjIndexPtr)>>8);
+		//printf("numOfAdjs  ->  %d\n", ((*adjIndexPtr)<<24)>>24);
 
 		currentAdjIndex += adjacents[i].size();
 	}
 
+	// Now, currentAdjIndex is the tolal adjacents numbers.
+	adjmemsize = currentAdjIndex*sizeof(unsigned int);
+	adjArray = new unsigned int[currentAdjIndex];
+	int adjIndex = 0;
+	for(int i=0; i<nels; i++) {
+		for( unsigned int vertexIndex : adjacents[i])
+			adjArray[adjIndex++] = vertexIndex;
+	}	
 
 	#if 0
 	for(int i=0; i<obj_vertexArray.size(); i++) {
@@ -131,7 +137,7 @@ void loadOBJFile(std::string path, int &nels, float *& vertex4Array){
 	#endif
 }
 
-cl_event init(cl_command_queue queue, cl_kernel init_k, cl_mem cl_vertex4Array, cl_int nels) {
+cl_event init(cl_command_queue queue, cl_kernel init_k, cl_mem cl_vertex4Array, cl_mem cl_adjArray, cl_mem cl_result, cl_int nels) {
 	size_t gws[] = { round_mul_up(nels, preferred_wg_init) };
 	cl_event init_evt;
 	cl_int err;
@@ -141,8 +147,12 @@ cl_event init(cl_command_queue queue, cl_kernel init_k, cl_mem cl_vertex4Array, 
 	// Setting arguments
 	err = clSetKernelArg(init_k, 0, sizeof(cl_vertex4Array), &cl_vertex4Array);
 	ocl_check(err, "set init arg 0");
-	err = clSetKernelArg(init_k, 1, sizeof(nels), &nels);
+	err = clSetKernelArg(init_k, 1, sizeof(cl_adjArray), &cl_adjArray);
 	ocl_check(err, "set init arg 1");
+	err = clSetKernelArg(init_k, 2, sizeof(cl_result), &cl_result);
+	ocl_check(err, "set init arg 2");
+	err = clSetKernelArg(init_k, 3, sizeof(nels), &nels);
+	ocl_check(err, "set init arg 3");
 
 	err = clEnqueueNDRangeKernel(queue, init_k,
 		1, NULL, gws, NULL, /* griglia di lancio */
@@ -156,7 +166,10 @@ int main(int argc, char *argv[]) {
 
 	int nels;
 	float* vertex4Array;
-	loadOBJFile(CUBE, nels, vertex4Array);
+	unsigned int* adjArray;
+	size_t adjmemsize;
+
+	loadOBJFile(DRAGON, nels, vertex4Array, adjArray, adjmemsize);
 	const size_t memsize = nels*4*sizeof(float);
 
 	// Hic sunt leones
@@ -169,7 +182,9 @@ int main(int argc, char *argv[]) {
 	
 	// Create Buffers
 	cl_mem cl_vertex4Array = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertex4Array, &err);
-	
+	cl_mem cl_adjArray = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, adjmemsize, adjArray, &err);
+	cl_mem cl_result = clCreateBuffer(context, CL_MEM_READ_WRITE, memsize, NULL, &err); // TEST
+
 	// Extract kernels
 	cl_kernel init_k = clCreateKernel(program, "init", &err);
 	ocl_check(err, "create kernel init");
@@ -177,7 +192,7 @@ int main(int argc, char *argv[]) {
 	// Set preferred_wg size from device info
 	err = clGetKernelWorkGroupInfo(init_k, deviceID, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(preferred_wg_init), &preferred_wg_init, NULL);
 	
-	cl_event init_evt = init(queue, init_k, cl_vertex4Array, nels);
+	cl_event init_evt = init(queue, init_k, cl_vertex4Array, cl_adjArray, cl_result, nels);
 
 	err = clWaitForEvents(1, &init_evt);
 	ocl_check(err, "clWaitForEvents");
