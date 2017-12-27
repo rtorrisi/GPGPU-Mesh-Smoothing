@@ -98,13 +98,25 @@ void loadOBJFile(std::string path, int &nels, float *& vertex4Array){
 
 	// Init vertex4Array
 	vertex4Array = new float[4*nels];
-	
+	int currentAdjIndex = 0;
 	for(int i=0; i<nels; i++) {
 		glm::vec3 *vertex = &obj_vertexArray[i];
 		vertex4Array[4*i] = vertex->x;
 		vertex4Array[4*i+1] = vertex->y;
 		vertex4Array[4*i+2] = vertex->z;
-		vertex4Array[4*i+3] = adjacents[i].size();
+
+		void* last4Byte = (void*)(&vertex4Array[4*i+3]);
+
+		unsigned int* adjIndexPtr = (unsigned int*)last4Byte;
+		*adjIndexPtr = ((unsigned int)currentAdjIndex)<<8;
+		
+		unsigned char* numOfAdjPtr = (unsigned char*)last4Byte+3;
+		//*numOfAdjPtr = (unsigned char)adjacents[i].size();
+
+		//printf("%d\n", adjIndexPtr);
+		//printf("%d\n", (*adjIndexPtr)>>8);
+
+		currentAdjIndex += adjacents[i].size();
 	}
 
 

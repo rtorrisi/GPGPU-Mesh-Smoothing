@@ -2,7 +2,19 @@ kernel void init(global float4 * restrict vertex4Array, int nels)
 {
 	int i = get_global_id(0);
 	if(i >= nels ) return;
+
 	float4 vertex = vertex4Array[i];
-	//printf("vertex %d -> %f / %f / %f   #adj -> %f\n", i, vertex.x, vertex.y, vertex.z, vertex.w);
+	float lastComponent = vertex.w;
+	void* last4Byte = &lastComponent;
+	unsigned int* adjIndexPtr = &lastComponent;
+	unsigned int adjIndex = (*(adjIndexPtr));
+	adjIndex = adjIndex>>8;
+
+	unsigned char* numOfAdjPtr = (unsigned char*)last4Byte+3;
+	unsigned int numOfAdj = (unsigned int)*numOfAdjPtr;
+
+	printf("vertex %d -> %f / %f / %f   #adj -> %d  #offset -> %d \n", i, vertex.x, vertex.y, vertex.z, numOfAdj, adjIndex);
+
+
 }
 
