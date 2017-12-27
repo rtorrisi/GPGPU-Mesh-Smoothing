@@ -20,12 +20,9 @@
 
 size_t preferred_wg_init;
 
-std::vector< glm::vec3 > obj_vertexArray;
-float* vertexArray;
-
-void loadOBJFile(std::string path){
-
-	std::vector< unsigned int > vertexIndices;
+void loadOBJFile(std::string path, float *& vertex4Array, int &nels){
+	std::vector< glm::vec3 > obj_vertexArray;
+	std::vector< unsigned int > faceVertexIndices;
 
 	FILE * file = fopen(path.c_str(), "r");
 	if( file == NULL ){
@@ -57,29 +54,31 @@ void loadOBJFile(std::string path){
 					return;
 				}				
 			}
-			vertexIndices.push_back(vertexIndex[0]);
-			vertexIndices.push_back(vertexIndex[1]);
-			vertexIndices.push_back(vertexIndex[2]);
+			faceVertexIndices.push_back(vertexIndex[0]);
+			faceVertexIndices.push_back(vertexIndex[1]);
+			faceVertexIndices.push_back(vertexIndex[2]);
 		}
 	}
-
-
+	
+	// Init nels with number of vertex in .obj file
+	nels = obj_vertexArray.size();
+	
 	int i=0;
-	vertexArray = new float[obj_vertexArray.size()*4];
+	vertex4Array = new float[4*obj_vertexArray.size()];
 	for(glm::vec3 vertex : obj_vertexArray){
-		vertexArray[i++] = vertex.x;
-		vertexArray[i++] = vertex.y;
-		vertexArray[i++] = vertex.z;
-		vertexArray[i++] = 0.0f;
+		vertex4Array[i++] = vertex.x;
+		vertex4Array[i++] = vertex.y;
+		vertex4Array[i++] = vertex.z;
+		vertex4Array[i++] = 0.0f;
 	}
 
 	
 	std::vector< unsigned int >* adjacents = new std::vector< unsigned int >[obj_vertexArray.size()];
 
-	for(int i=0; i<vertexIndices.size(); i+=3){
-		unsigned int vertexID1 = vertexIndices[i] - 1;
-		unsigned int vertexID2 = vertexIndices[i+1] - 1;
-		unsigned int vertexID3 = vertexIndices[i+2] - 1;
+	for(int i=0; i<faceVertexIndices.size(); i+=3){
+		unsigned int vertexID1 = faceVertexIndices[i] - 1;
+		unsigned int vertexID2 = faceVertexIndices[i+1] - 1;
+		unsigned int vertexID3 = faceVertexIndices[i+2] - 1;
 
 		//glm::vec3 vertex1 = obj_vertexArray[ vertexID1 ];
 		//glm::vec3 vertex2 = obj_vertexArray[ vertexID2 ];
@@ -118,7 +117,7 @@ void loadOBJFile(std::string path){
 	#endif
 }
 
-cl_event init(cl_command_queue que, cl_kernel init_k, cl_mem cl_vertexArray, cl_mem cl_vertexResult, cl_int nels) {
+cl_event init(cl_command_queue que, cl_kernel init_k, cl_mem cl_vertex4Array, cl_int nels) {
 	size_t gws[] = { round_mul_up(nels, preferred_wg_init) };
 	cl_event init_evt;
 	cl_int err;
@@ -126,12 +125,10 @@ cl_event init(cl_command_queue que, cl_kernel init_k, cl_mem cl_vertexArray, cl_
 	printf("init gws: %d | %zu => %zu\n", nels, preferred_wg_init, gws[0]);
 
 	// Setting arguments
-	err = clSetKernelArg(init_k, 0, sizeof(cl_vertexArray), &cl_vertexArray);
+	err = clSetKernelArg(init_k, 0, sizeof(cl_vertex4Array), &cl_vertex4Array);
 	ocl_check(err, "set init arg 0");
-	err = clSetKernelArg(init_k, 1, sizeof(cl_vertexResult), &cl_vertexResult);
+	err = clSetKernelArg(init_k, 1, sizeof(nels), &nels);
 	ocl_check(err, "set init arg 1");
-	err = clSetKernelArg(init_k, 2, sizeof(nels), &nels);
-	ocl_check(err, "set init arg 2");
 
 	err = clEnqueueNDRangeKernel(que, init_k,
 		1, NULL, gws, NULL, /* griglia di lancio */
@@ -143,9 +140,11 @@ cl_event init(cl_command_queue que, cl_kernel init_k, cl_mem cl_vertexArray, cl_
 
 int main(int argc, char *argv[]) {
 
-	loadOBJFile(DRAGON);
-	int nels = obj_vertexArray.size();
-	const size_t memsize = 4*nels*sizeof(float);
+	int nels;
+	float* vertex4Array;
+	loadOBJFile(DRAGON, vertex4Array, nels);
+	const size_t memsize = nels*4*sizeof(float);
+	
 
 	/* Hic sunt leones */
 	cl_int err;
@@ -154,22 +153,22 @@ int main(int argc, char *argv[]) {
 	cl_context context = create_context(p, deviceID);
 	cl_command_queue que = create_queue(context, deviceID);
 	cl_program prog = create_program(OCL_FILENAME, context, deviceID);
-
-	cl_mem cl_vertexArray = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertexArray, &err);
-	cl_mem cl_vertexResult = clCreateBuffer(context, CL_MEM_READ_WRITE, memsize, NULL, &err);
-
-	/* Extract kernels */
+	
+	cl_mem cl_vertex4Array = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertex4Array, &err);
+	
+	
+	// Extract kernels
 	cl_kernel init_k = clCreateKernel(prog, "init", &err);
 	ocl_check(err, "create kernel init");
 
 	// Set preferred_wg size from device info
 	err = clGetKernelWorkGroupInfo(init_k, deviceID, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(preferred_wg_init), &preferred_wg_init, NULL);
-	cl_event init_evt = init(que, init_k, cl_vertexArray, cl_vertexResult, nels);
+	
+	cl_event init_evt = init(que, init_k, cl_vertex4Array, nels);
 
 	err = clWaitForEvents(1, &init_evt);
 	ocl_check(err, "clWaitForEvents");
 
 	printf("init time:\t%gms\t%gGB/s\n", runtime_ms(init_evt), (2.0*memsize)/runtime_ns(init_evt));
-
 	return 0;
 }
