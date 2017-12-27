@@ -20,7 +20,7 @@
 
 size_t preferred_wg_init;
 
-void loadOBJFile(std::string path, float *& vertex4Array, int &nels){
+void loadOBJFile(std::string path, int &nels, float *& vertex4Array){
 	std::vector< glm::vec3 > obj_vertexArray;
 	std::vector< unsigned int > faceVertexIndices;
 
@@ -29,7 +29,7 @@ void loadOBJFile(std::string path, float *& vertex4Array, int &nels){
 		printf("Impossible to open the file !\n");
 		return;
 	}
-	while( 1 ){
+	while( 1 ){ // parsing
 		char lineHeader[128];
 		// read the first word of the line
 		int res = fscanf(file, "%s", lineHeader);
@@ -39,32 +39,32 @@ void loadOBJFile(std::string path, float *& vertex4Array, int &nels){
 			glm::vec3 vertex;
 			fscanf(file, "%f %f %f\n", &vertex.x, &vertex.y, &vertex.z );
 			obj_vertexArray.push_back(vertex);
-		} else if ( strcmp( lineHeader, "f" ) == 0 ){
-			unsigned int vertexIndex[3], uvIndex[3], normalIndex[3];
+		}
+		else if ( strcmp( lineHeader, "f" ) == 0 ){
+			unsigned int faceVertexIndex[3], faceUvIndex[3], faceNormalIndex[3];
 			if(path == HUMAN){
-				int matches = fscanf(file, "%d//%d %d//%d %d//%d\n", &vertexIndex[0], &normalIndex[0], &vertexIndex[1], &normalIndex[1], &vertexIndex[2], &normalIndex[2] );
+				int matches = fscanf(file, "%d//%d %d//%d %d//%d\n", &faceVertexIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceNormalIndex[2] );
 				if (matches != 6){
 					printf("File can't be read by our simple parser : ( Try exporting with other options\n");
 					return;
 				}
 			} else {
-				int matches = fscanf(file, "%d/%d/%d %d/%d/%d %d/%d/%d\n", &vertexIndex[0], &uvIndex[0], &normalIndex[0], &vertexIndex[1], &uvIndex[1], &normalIndex[1], &vertexIndex[2], &uvIndex[2], &normalIndex[2] );
+				int matches = fscanf(file, "%d/%d/%d %d/%d/%d %d/%d/%d\n", &faceVertexIndex[0], &faceUvIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceUvIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceUvIndex[2], &faceNormalIndex[2] );
 				if (matches != 9){
 					printf("File can't be read by our simple parser : ( Try exporting with other options\n");
 					return;
 				}				
 			}
-			faceVertexIndices.push_back(vertexIndex[0]);
-			faceVertexIndices.push_back(vertexIndex[1]);
-			faceVertexIndices.push_back(vertexIndex[2]);
+			faceVertexIndices.push_back(faceVertexIndex[0]);
+			faceVertexIndices.push_back(faceVertexIndex[1]);
+			faceVertexIndices.push_back(faceVertexIndex[2]);
 		}
 	}
 	
 	// Init number of vertex
 	nels = obj_vertexArray.size();
 	
-	// Algorithm to discover adjacents vertex for each vertex
-	
+	// Discover adjacents vertex for each vertex
 	std::vector< unsigned int >* adjacents = new std::vector< unsigned int >[nels];
 
 	for(int i=0; i<faceVertexIndices.size(); i+=3){
@@ -144,11 +144,10 @@ int main(int argc, char *argv[]) {
 
 	int nels;
 	float* vertex4Array;
-	loadOBJFile(CUBE, vertex4Array, nels);
+	loadOBJFile(CUBE, nels, vertex4Array);
 	const size_t memsize = nels*4*sizeof(float);
-	
 
-	/* Hic sunt leones */
+	// Hic sunt leones
 	cl_int err;
 	cl_platform_id platformID = select_platform();
 	cl_device_id deviceID = select_device(platformID);
@@ -156,8 +155,8 @@ int main(int argc, char *argv[]) {
 	cl_command_queue queue = create_queue(context, deviceID);
 	cl_program program = create_program(OCL_FILENAME, context, deviceID);
 	
+	// Create Buffers
 	cl_mem cl_vertex4Array = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertex4Array, &err);
-	
 	
 	// Extract kernels
 	cl_kernel init_k = clCreateKernel(program, "init", &err);
