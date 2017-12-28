@@ -1,9 +1,11 @@
-#define OCL_PLATFORM 1
+#define OCL_PLATFORM 0
 #define OCL_DEVICE 0
 
 #define DRAGON "res/dragon.obj"
 #define CUBE "res/cube_example.obj"
 #define HUMAN "res/human.obj"
+#define HEAD "res/head.obj"
+#define SUZANNE "res/suzanne.obj"
 
 #include "ocl_boiler.h"
 #include <iostream>
@@ -42,7 +44,7 @@ void loadOBJFile(std::string path, int &nels, float *& vertex4Array, unsigned in
 		}
 		else if ( strcmp( lineHeader, "f" ) == 0 ){
 			unsigned int faceVertexIndex[3], faceUvIndex[3], faceNormalIndex[3];
-			if(path == HUMAN){
+			if(path == HUMAN || path == HEAD || path == SUZANNE){
 				int matches = fscanf(file, "%d//%d %d//%d %d//%d\n", &faceVertexIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceNormalIndex[2] );
 				if (matches != 6){
 					printf("File can't be read by our simple parser : ( Try exporting with other options\n");
@@ -99,24 +101,27 @@ void loadOBJFile(std::string path, int &nels, float *& vertex4Array, unsigned in
 	// Init vertex4Array
 	vertex4Array = new float[4*nels];
 	int currentAdjIndex = 0;
+	int maxadj = 0;
+	
 	for(int i=0; i<nels; i++) {
 		glm::vec3 *vertex = &obj_vertexArray[i];
 		vertex4Array[4*i] = vertex->x;
 		vertex4Array[4*i+1] = vertex->y;
 		vertex4Array[4*i+2] = vertex->z;
 
-		void* last4Byte = (void*)(&vertex4Array[4*i+3]);
-
-		unsigned int* adjIndexPtr = (unsigned int*)last4Byte;
-		*adjIndexPtr = ((unsigned int)currentAdjIndex)<<8;
-		*adjIndexPtr += (unsigned int)adjacents[i].size();
+		unsigned int* adjIndexPtr = (unsigned int*)(&vertex4Array[4*i+3]);
+		*adjIndexPtr = ((unsigned int)currentAdjIndex)<<6;
+		*adjIndexPtr += (((unsigned int)adjacents[i].size())<<26)>>26;
 
 		//printf("indexOfAdjs  ->  %d\n", (*adjIndexPtr)>>8);
 		//printf("numOfAdjs  ->  %d\n", ((*adjIndexPtr)<<24)>>24);
 
+		if(adjacents[i].size() > maxadj) maxadj = adjacents[i].size();
 		currentAdjIndex += adjacents[i].size();
 	}
-
+	//std::cout << "############# " << currentAdjIndex << std::endl;
+	//std::cout << "############# " << maxadj << std::endl << std::endl;
+	
 	// Now, currentAdjIndex is the tolal adjacents numbers.
 	adjmemsize = currentAdjIndex*sizeof(unsigned int);
 	adjArray = new unsigned int[currentAdjIndex];
@@ -169,7 +174,8 @@ int main(int argc, char *argv[]) {
 	unsigned int* adjArray;
 	size_t adjmemsize;
 
-	loadOBJFile(DRAGON, nels, vertex4Array, adjArray, adjmemsize);
+	// ###################################################################################################################
+	loadOBJFile(CUBE, nels, vertex4Array, adjArray, adjmemsize);
 	const size_t memsize = nels*4*sizeof(float);
 
 	// Hic sunt leones
