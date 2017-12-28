@@ -1,4 +1,5 @@
-
+#define INDEX_BITS 26
+#define COUNT_BITS 6
 
 kernel void init(global float4 * restrict vertex4Array, global unsigned int* restrict adjArray, global float4 * restrict result, int nels, float factor)
 {
@@ -9,8 +10,8 @@ kernel void init(global float4 * restrict vertex4Array, global unsigned int* res
 	float lastComponent = vertex.w;
 	
 	unsigned int adjInfo = *(unsigned int *)&lastComponent;
-	unsigned int adjIndexOffset = adjInfo>>6;
-	unsigned int adjCount = ((adjInfo)<<26)>>26;
+	unsigned int adjIndexOffset = adjInfo>>COUNT_BITS;
+	unsigned int adjCount = ((adjInfo)<<INDEX_BITS)>>INDEX_BITS;
 	//printf("vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, vertex.x, vertex.y, vertex.z, adjIndexOffset, adjCount);
 	
 	float4 umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
