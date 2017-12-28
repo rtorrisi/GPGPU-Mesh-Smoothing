@@ -1,6 +1,7 @@
-#define OCL_PLATFORM 1
+#define OCL_PLATFORM 0
 #define OCL_DEVICE 0
 
+#define TEST "res/test.obj"
 #define DRAGON "res/dragon.obj"
 #define CUBE "res/cube_example.obj"
 #define HUMAN "res/human.obj"
@@ -44,7 +45,7 @@ void readOBJFile(std::string path, int &nels, float *& vertex4Array, int &nadjs,
 		}
 		else if ( strcmp( lineHeader, "f" ) == 0 ){
 			unsigned int faceVertexIndex[3], faceUvIndex[3], faceNormalIndex[3];
-			if(path == HUMAN || path == HEAD || path == SUZANNE){
+			if(path == TEST || path == HUMAN || path == HEAD || path == SUZANNE){
 				int matches = fscanf(file, "%d//%d %d//%d %d//%d\n", &faceVertexIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceNormalIndex[2] );
 				if (matches != 6){
 					printf("File can't be read by our simple parser : ( Try exporting with other options\n");
@@ -142,12 +143,37 @@ void readOBJFile(std::string path, int &nels, float *& vertex4Array, int &nadjs,
 	#endif
 }
 
-cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4Array, cl_mem cl_adjArray, cl_mem cl_result, cl_int nels, cl_float factor) {
+void writeOBJFile(std::string path, float *res){
+	char line[512];
+
+	FILE * in_file = fopen(path.c_str(), "r");
+	FILE * out_file = fopen("res/out.obj", "w");
+	
+	if(in_file == NULL){
+		printf("Impossible to open the file !\n");
+		return;
+	}
+	if(res == NULL) {
+		printf("Result input error !\n");
+		return;
+	}
+	
+	int i=0;
+	while (fgets(line, sizeof line, in_file) != NULL) {
+		if ( line[0] == 'v' && line[1] == ' ') {
+			fprintf(out_file, "v %f %f %f\n", res[4*i], res[4*i+1], res[4*i+2]);
+			i++;
+		}
+		else fprintf(out_file, "%s", line);
+	}
+}
+
+cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4Array, cl_mem cl_adjArray, cl_mem cl_result, cl_int nels, cl_float factor){
 	size_t gws[] = { round_mul_up(nels, preferred_wg_smooth) };
 	cl_event smooth_evt;
 	cl_int err;
 
-	printf("smooth gws: %d | %zu => %zu\n", nels, preferred_wg_smooth, gws[0]);
+	//printf("smooth gws: %d | %zu => %zu\n", nels, preferred_wg_smooth, gws[0]);
 
 	// Setting arguments
 	err = clSetKernelArg(smooth_k, 0, sizeof(cl_vertex4Array), &cl_vertex4Array);
@@ -183,11 +209,14 @@ int main(int argc, char *argv[]) {
 	int nels;
 	int nadjs;
 	float meanAdjNum;
-	float* vertex4Array;
+	float* vertex4Array, *result_vertex4Array;
 	unsigned int* adjArray;
 	size_t adjmemsize;
 	
-	readOBJFile(SUZANNE, nels, vertex4Array, nadjs, adjArray, adjmemsize);
+	float lambda = 0.5f;
+	float mi = -0.5f;
+	
+	readOBJFile(TEST, nels, vertex4Array, nadjs, adjArray, adjmemsize);
 	const size_t memsize = nels*4*sizeof(float);
 	meanAdjNum = nadjs/(float)nels;
 	
@@ -210,17 +239,37 @@ int main(int argc, char *argv[]) {
 	// Set preferred_wg size from device info
 	err = clGetKernelWorkGroupInfo(smooth_k, deviceID, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(preferred_wg_smooth), &preferred_wg_smooth, NULL);
 	
-	cl_event smooth_evt = smooth(queue, smooth_k, cl_vertex4Array, cl_adjArray, cl_result, nels, 0.5f);
-	err = clWaitForEvents(1, &smooth_evt);
-	ocl_check(err, "clWaitForEvents");
+	cl_event smooth_evt, smooth_evt2;
+	printf("start\n");
+	for(int iter=0; iter<10000; iter++) {
+		smooth_evt = smooth(queue, smooth_k, cl_vertex4Array, cl_adjArray, cl_result, nels, lambda);
+		err = clWaitForEvents(1, &smooth_evt);
+		ocl_check(err, "clWaitForEvents");
+		
+		smooth_evt2 = smooth(queue, smooth_k, cl_result, cl_adjArray, cl_vertex4Array, nels, lambda);
+		err = clWaitForEvents(1, &smooth_evt2);
+		ocl_check(err, "clWaitForEvents");
+	}
+	printf("stop\n");
+	
+	// Copy result
+	result_vertex4Array = new float[4*nels];
+	if (!result_vertex4Array) printf("error res\n");
 
-	cl_event taubin_evt = smooth(queue, smooth_k, cl_result, cl_adjArray, cl_vertex4Array, nels, -0.6f);
-	err = clWaitForEvents(1, &taubin_evt);
+	cl_event copy_evt;
+	err = clEnqueueReadBuffer(queue, cl_vertex4Array, CL_TRUE,
+		0, memsize, result_vertex4Array,
+		1, &smooth_evt, &copy_evt);
+	ocl_check(err, "read buffer vertex4Array");
+	
+	err = clWaitForEvents(1, &copy_evt);
 	ocl_check(err, "clWaitForEvents");
 	
 	printf("smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
 		(2.0*memsize + meanAdjNum*memsize + meanAdjNum*nels*sizeof(int))/runtime_ns(smooth_evt));
-	printf("smooth time:\t%gms\t%gGB/s\n", runtime_ms(taubin_evt),
-		(2.0*memsize + meanAdjNum*memsize + meanAdjNum*nels*sizeof(int))/runtime_ns(taubin_evt));
+	printf("copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt),
+		(2.0*memsize)/runtime_ns(copy_evt));
+		
+	writeOBJFile(TEST, result_vertex4Array);
 	return 0;
 }
