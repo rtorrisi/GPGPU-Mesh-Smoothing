@@ -246,7 +246,7 @@ int main(int argc, char *argv[]) {
 		err = clWaitForEvents(1, &smooth_evt);
 		ocl_check(err, "clWaitForEvents");
 		
-		smooth_evt2 = smooth(queue, smooth_k, cl_result, cl_adjArray, cl_vertex4Array, nels, lambda);
+		smooth_evt2 = smooth(queue, smooth_k, cl_result, cl_adjArray, cl_vertex4Array, nels, mi);
 		err = clWaitForEvents(1, &smooth_evt2);
 		ocl_check(err, "clWaitForEvents");
 	}
