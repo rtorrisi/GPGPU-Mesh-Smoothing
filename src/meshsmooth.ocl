@@ -1,27 +1,29 @@
 
 
-kernel void init(global float4 * restrict vertex4Array, global unsigned int* restrict adjArray, global float4 * restrict result, int nels)
+kernel void init(global float4 * restrict vertex4Array, global unsigned int* restrict adjArray, global float4 * restrict result, int nels, float factor)
 {
 	int i = get_global_id(0);
 	if(i >= nels) return;
-
+	
 	float4 vertex = vertex4Array[i];
 	float lastComponent = vertex.w;
 	
 	unsigned int adjInfo = *(unsigned int *)&lastComponent;
 	unsigned int adjIndexOffset = adjInfo>>6;
 	unsigned int adjCount = ((adjInfo)<<26)>>26;
-	printf("vertex %d -> %f / %f / %f   #adj -> %d  #offset -> %d \n", i, vertex.x, vertex.y, vertex.z, adjCount, adjIndexOffset);
+	//printf("vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, vertex.x, vertex.y, vertex.z, adjIndexOffset, adjCount);
 	
-	
+	float4 umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
 	for(int adjIndex=0; adjIndex<adjCount; adjIndex++)
 	{
 		float4 adj = vertex4Array[adjArray[adjIndexOffset+adjIndex]];
-		vertex += adj;
-		printf("Adj %d of %d -> %f / %f / %f\n", adjIndex, i, adj.x, adj.y, adj.z);
+		umbrellaOperator += ( adj-vertex );
+		//printf("Adj %d of %d -> %f / %f / %f\n", adjIndex, i, adj.x, adj.y, adj.z);
 	}
-
-	result[i] = vertex;
-
+	umbrellaOperator /= adjCount;
+	float4 res = vertex + factor*umbrellaOperator;
+	res.w = lastComponent;
+	result[i] = res;
+	//printf("result vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, res.x, res.y, res.z, adjIndexOffset, adjCount);
 }
 

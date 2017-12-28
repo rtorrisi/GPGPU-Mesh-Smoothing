@@ -22,7 +22,7 @@
 
 size_t preferred_wg_init;
 
-void loadOBJFile(std::string path, int &nels, float *& vertex4Array, unsigned int* &adjArray, size_t &adjmemsize){
+void readOBJFile(std::string path, int &nels, float *& vertex4Array, unsigned int* &adjArray, size_t &adjmemsize){
 	std::vector< glm::vec3 > obj_vertexArray;
 	std::vector< unsigned int > faceVertexIndices;
 
@@ -101,7 +101,7 @@ void loadOBJFile(std::string path, int &nels, float *& vertex4Array, unsigned in
 	// Init vertex4Array
 	vertex4Array = new float[4*nels];
 	int currentAdjIndex = 0;
-	int maxadj = 0;
+	//int maxadj = 0;
 	
 	for(int i=0; i<nels; i++) {
 		glm::vec3 *vertex = &obj_vertexArray[i];
@@ -116,7 +116,7 @@ void loadOBJFile(std::string path, int &nels, float *& vertex4Array, unsigned in
 		//printf("indexOfAdjs  ->  %d\n", (*adjIndexPtr)>>8);
 		//printf("numOfAdjs  ->  %d\n", ((*adjIndexPtr)<<24)>>24);
 
-		if(adjacents[i].size() > maxadj) maxadj = adjacents[i].size();
+		//if(adjacents[i].size() > maxadj) maxadj = adjacents[i].size();
 		currentAdjIndex += adjacents[i].size();
 	}
 	//std::cout << "############# " << currentAdjIndex << std::endl;
@@ -142,7 +142,7 @@ void loadOBJFile(std::string path, int &nels, float *& vertex4Array, unsigned in
 	#endif
 }
 
-cl_event init(cl_command_queue queue, cl_kernel init_k, cl_mem cl_vertex4Array, cl_mem cl_adjArray, cl_mem cl_result, cl_int nels) {
+cl_event init(cl_command_queue queue, cl_kernel init_k, cl_mem cl_vertex4Array, cl_mem cl_adjArray, cl_mem cl_result, cl_int nels, cl_float factor) {
 	size_t gws[] = { round_mul_up(nels, preferred_wg_init) };
 	cl_event init_evt;
 	cl_int err;
@@ -158,6 +158,8 @@ cl_event init(cl_command_queue queue, cl_kernel init_k, cl_mem cl_vertex4Array, 
 	ocl_check(err, "set init arg 2");
 	err = clSetKernelArg(init_k, 3, sizeof(nels), &nels);
 	ocl_check(err, "set init arg 3");
+	err = clSetKernelArg(init_k, 4, sizeof(factor), &factor);
+	ocl_check(err, "set init arg 4");
 
 	err = clEnqueueNDRangeKernel(queue, init_k,
 		1, NULL, gws, NULL, /* griglia di lancio */
@@ -175,7 +177,8 @@ int main(int argc, char *argv[]) {
 	size_t adjmemsize;
 
 	// ###################################################################################################################
-	loadOBJFile(CUBE, nels, vertex4Array, adjArray, adjmemsize);
+	readOBJFile(SUZANNE, nels, vertex4Array, adjArray, adjmemsize);
+	std::cout<<"OBJ loaded"<<std::endl;
 	const size_t memsize = nels*4*sizeof(float);
 
 	// Hic sunt leones
@@ -198,11 +201,15 @@ int main(int argc, char *argv[]) {
 	// Set preferred_wg size from device info
 	err = clGetKernelWorkGroupInfo(init_k, deviceID, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(preferred_wg_init), &preferred_wg_init, NULL);
 	
-	cl_event init_evt = init(queue, init_k, cl_vertex4Array, cl_adjArray, cl_result, nels);
-
+	cl_event init_evt = init(queue, init_k, cl_vertex4Array, cl_adjArray, cl_result, nels, 0.5f);
 	err = clWaitForEvents(1, &init_evt);
 	ocl_check(err, "clWaitForEvents");
 
-	printf("init time:\t%gms\t%gGB/s\n", runtime_ms(init_evt), (2.0*memsize)/runtime_ns(init_evt));
+	cl_event taubin_evt = init(queue, init_k, cl_result, cl_adjArray, cl_vertex4Array, nels, -0.6f);
+	err = clWaitForEvents(1, &taubin_evt);
+	ocl_check(err, "clWaitForEvents");
+	
+	printf("init time:\t%gms\t%gGB/s\n", runtime_ms(init_evt), (2.0*memsize+12*memsize)/runtime_ns(init_evt));
+	printf("init time:\t%gms\t%gGB/s\n", runtime_ms(taubin_evt), (2.0*memsize+12*memsize)/runtime_ns(taubin_evt));
 	return 0;
 }
