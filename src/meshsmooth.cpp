@@ -1,4 +1,4 @@
-#define OCL_PLATFORM 0
+#define OCL_PLATFORM 1
 #define OCL_DEVICE 0
 
 #define DRAGON "res/dragon.obj"
@@ -20,9 +20,9 @@
 
 #define OCL_FILENAME "src/meshsmooth.ocl"
 
-size_t preferred_wg_init;
+size_t preferred_wg_smooth;
 
-void readOBJFile(std::string path, int &nels, float *& vertex4Array, unsigned int* &adjArray, size_t &adjmemsize){
+void readOBJFile(std::string path, int &nels, float *& vertex4Array, int &nadjs, unsigned int* &adjArray, size_t &adjmemsize){
 	std::vector< glm::vec3 > obj_vertexArray;
 	std::vector< unsigned int > faceVertexIndices;
 
@@ -119,8 +119,8 @@ void readOBJFile(std::string path, int &nels, float *& vertex4Array, unsigned in
 		//if(adjacents[i].size() > maxadj) maxadj = adjacents[i].size();
 		currentAdjIndex += adjacents[i].size();
 	}
-	//std::cout << "############# " << currentAdjIndex << std::endl;
-	//std::cout << "############# " << maxadj << std::endl << std::endl;
+	nadjs = currentAdjIndex;
+	//std::cout << "############# Max adjacent count " << maxadj << std::endl << std::endl;
 	
 	// Now, currentAdjIndex is the tolal adjacents numbers.
 	adjmemsize = currentAdjIndex*sizeof(unsigned int);
@@ -142,45 +142,35 @@ void readOBJFile(std::string path, int &nels, float *& vertex4Array, unsigned in
 	#endif
 }
 
-cl_event init(cl_command_queue queue, cl_kernel init_k, cl_mem cl_vertex4Array, cl_mem cl_adjArray, cl_mem cl_result, cl_int nels, cl_float factor) {
-	size_t gws[] = { round_mul_up(nels, preferred_wg_init) };
-	cl_event init_evt;
+cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4Array, cl_mem cl_adjArray, cl_mem cl_result, cl_int nels, cl_float factor) {
+	size_t gws[] = { round_mul_up(nels, preferred_wg_smooth) };
+	cl_event smooth_evt;
 	cl_int err;
 
-	printf("init gws: %d | %zu => %zu\n", nels, preferred_wg_init, gws[0]);
+	printf("smooth gws: %d | %zu => %zu\n", nels, preferred_wg_smooth, gws[0]);
 
 	// Setting arguments
-	err = clSetKernelArg(init_k, 0, sizeof(cl_vertex4Array), &cl_vertex4Array);
-	ocl_check(err, "set init arg 0");
-	err = clSetKernelArg(init_k, 1, sizeof(cl_adjArray), &cl_adjArray);
-	ocl_check(err, "set init arg 1");
-	err = clSetKernelArg(init_k, 2, sizeof(cl_result), &cl_result);
-	ocl_check(err, "set init arg 2");
-	err = clSetKernelArg(init_k, 3, sizeof(nels), &nels);
-	ocl_check(err, "set init arg 3");
-	err = clSetKernelArg(init_k, 4, sizeof(factor), &factor);
-	ocl_check(err, "set init arg 4");
+	err = clSetKernelArg(smooth_k, 0, sizeof(cl_vertex4Array), &cl_vertex4Array);
+	ocl_check(err, "set smooth arg 0");
+	err = clSetKernelArg(smooth_k, 1, sizeof(cl_adjArray), &cl_adjArray);
+	ocl_check(err, "set smooth arg 1");
+	err = clSetKernelArg(smooth_k, 2, sizeof(cl_result), &cl_result);
+	ocl_check(err, "set smooth arg 2");
+	err = clSetKernelArg(smooth_k, 3, sizeof(nels), &nels);
+	ocl_check(err, "set smooth arg 3");
+	err = clSetKernelArg(smooth_k, 4, sizeof(factor), &factor);
+	ocl_check(err, "set smooth arg 4");
 
-	err = clEnqueueNDRangeKernel(queue, init_k,
+	err = clEnqueueNDRangeKernel(queue, smooth_k,
 		1, NULL, gws, NULL, /* griglia di lancio */
 		0, NULL, /* waiting list */
-		&init_evt);
-	ocl_check(err, "enqueue kernel init");
-	return init_evt;
+		&smooth_evt);
+	ocl_check(err, "enqueue kernel smooth");
+	return smooth_evt;
 }
 
 int main(int argc, char *argv[]) {
-
-	int nels;
-	float* vertex4Array;
-	unsigned int* adjArray;
-	size_t adjmemsize;
-
-	// ###################################################################################################################
-	readOBJFile(SUZANNE, nels, vertex4Array, adjArray, adjmemsize);
-	std::cout<<"OBJ loaded"<<std::endl;
-	const size_t memsize = nels*4*sizeof(float);
-
+	
 	// Hic sunt leones
 	cl_int err;
 	cl_platform_id platformID = select_platform();
@@ -189,27 +179,48 @@ int main(int argc, char *argv[]) {
 	cl_command_queue queue = create_queue(context, deviceID);
 	cl_program program = create_program(OCL_FILENAME, context, deviceID);
 	
+	// ###################################################################################################################
+	int nels;
+	int nadjs;
+	float meanAdjNum;
+	float* vertex4Array;
+	unsigned int* adjArray;
+	size_t adjmemsize;
+	
+	readOBJFile(SUZANNE, nels, vertex4Array, nadjs, adjArray, adjmemsize);
+	const size_t memsize = nels*4*sizeof(float);
+	meanAdjNum = nadjs/(float)nels;
+	
+	std::cout<<"=== .OBJ INFO ==="<<std::endl;
+	std::cout << " Vertex elements : " << nels << std::endl;
+	std::cout << " Adjacents elements : " << nadjs << std::endl;
+	std::cout << " Mean Adjacents elements : " << meanAdjNum << std::endl;
+	std::cout<<"================="<<std::endl<<std::endl;
+	// ###################################################################################################################
+	
 	// Create Buffers
 	cl_mem cl_vertex4Array = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertex4Array, &err);
 	cl_mem cl_adjArray = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, adjmemsize, adjArray, &err);
 	cl_mem cl_result = clCreateBuffer(context, CL_MEM_READ_WRITE, memsize, NULL, &err); // TEST
 
 	// Extract kernels
-	cl_kernel init_k = clCreateKernel(program, "init", &err);
-	ocl_check(err, "create kernel init");
+	cl_kernel smooth_k = clCreateKernel(program, "smooth", &err);
+	ocl_check(err, "create kernel smooth");
 
 	// Set preferred_wg size from device info
-	err = clGetKernelWorkGroupInfo(init_k, deviceID, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(preferred_wg_init), &preferred_wg_init, NULL);
+	err = clGetKernelWorkGroupInfo(smooth_k, deviceID, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(preferred_wg_smooth), &preferred_wg_smooth, NULL);
 	
-	cl_event init_evt = init(queue, init_k, cl_vertex4Array, cl_adjArray, cl_result, nels, 0.5f);
-	err = clWaitForEvents(1, &init_evt);
+	cl_event smooth_evt = smooth(queue, smooth_k, cl_vertex4Array, cl_adjArray, cl_result, nels, 0.5f);
+	err = clWaitForEvents(1, &smooth_evt);
 	ocl_check(err, "clWaitForEvents");
 
-	cl_event taubin_evt = init(queue, init_k, cl_result, cl_adjArray, cl_vertex4Array, nels, -0.6f);
+	cl_event taubin_evt = smooth(queue, smooth_k, cl_result, cl_adjArray, cl_vertex4Array, nels, -0.6f);
 	err = clWaitForEvents(1, &taubin_evt);
 	ocl_check(err, "clWaitForEvents");
 	
-	printf("init time:\t%gms\t%gGB/s\n", runtime_ms(init_evt), (2.0*memsize+12*memsize)/runtime_ns(init_evt));
-	printf("init time:\t%gms\t%gGB/s\n", runtime_ms(taubin_evt), (2.0*memsize+12*memsize)/runtime_ns(taubin_evt));
+	printf("smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
+		(2.0*memsize + meanAdjNum*memsize + meanAdjNum*nels*sizeof(int))/runtime_ns(smooth_evt));
+	printf("smooth time:\t%gms\t%gGB/s\n", runtime_ms(taubin_evt),
+		(2.0*memsize + meanAdjNum*memsize + meanAdjNum*nels*sizeof(int))/runtime_ns(taubin_evt));
 	return 0;
 }

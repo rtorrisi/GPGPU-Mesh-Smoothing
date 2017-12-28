@@ -1,7 +1,7 @@
 #define INDEX_BITS 26
 #define COUNT_BITS 6
 
-kernel void init(global float4 * restrict vertex4Array, global unsigned int* restrict adjArray, global float4 * restrict result, int nels, float factor)
+kernel void smooth(global float4 * restrict vertex4Array, global unsigned int* restrict adjArray, global float4 * restrict result, int nels, float factor)
 {
 	int i = get_global_id(0);
 	if(i >= nels) return;
