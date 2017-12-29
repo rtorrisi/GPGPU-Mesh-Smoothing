@@ -212,9 +212,16 @@ cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4Arr
 
 int main(int argc, char *argv[]) {
 	
-	int iterations = 100;
+	int iterations = 1;
 	float lambda = 0.5f;
 	float mi = 0.5f;
+	
+	if(argc >= 2) {
+		iterations = atoi(argv[1]);
+	} if(argc == 4) {
+		lambda = atof(argv[2]);
+		mi = atof(argv[3]);
+	}
 	
 	int nels, nadjs;
 	int minAdjNum, maxAdjNum;
