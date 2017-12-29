@@ -1,7 +1,7 @@
 #define OCL_PLATFORM 0
 #define OCL_DEVICE 0
 
-#define TEST "res/test.obj"
+#define TEST "res/suzanne.obj"
 #define ANGEL "res/angel.obj"
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
@@ -23,6 +23,14 @@
 #define OCL_FILENAME "src/meshsmooth.ocl"
 
 size_t preferred_wg_smooth;
+
+void orderedUniqueInsert(std::vector< unsigned int >*adjacents, unsigned int vertexID) {
+	std::vector< unsigned int >::iterator it;
+	for(it = adjacents->begin(); it != adjacents->end() && *it < vertexID; it++) {}
+	if(it == adjacents->end() || *it != vertexID){
+		adjacents->insert(it, vertexID);
+	}
+}
 
 void readOBJFile(std::string path,
 	int &nels, float* &vertex4Array, int &nadjs, unsigned int* &adjArray,
@@ -88,6 +96,17 @@ void readOBJFile(std::string path,
 		std::vector< unsigned int >* adjacent2 = &adjacents[vertexID2];
 		std::vector< unsigned int >* adjacent3 = &adjacents[vertexID3];
 		
+	
+		#if 1
+		orderedUniqueInsert(adjacent1, vertexID2);
+		orderedUniqueInsert(adjacent1, vertexID3);
+		
+		orderedUniqueInsert(adjacent2, vertexID1);
+		orderedUniqueInsert(adjacent2, vertexID3);
+		
+		orderedUniqueInsert(adjacent3, vertexID1);
+		orderedUniqueInsert(adjacent3, vertexID2);
+		#else
 		if (std::find(adjacent1->begin(), adjacent1->end(), vertexID2) == adjacent1->end())
 			adjacent1->push_back(vertexID2);
 		if (std::find(adjacent1->begin(), adjacent1->end(), vertexID3) == adjacent1->end())
@@ -102,8 +121,9 @@ void readOBJFile(std::string path,
 			adjacent3->push_back(vertexID1);
 		if (std::find(adjacent3->begin(), adjacent3->end(), vertexID2) == adjacent3->end())
 			adjacent3->push_back(vertexID2);
+		#endif
 	}
-
+	
 	// Init vertex4Array
 	vertex4Array = new float[4*nels];
 	
@@ -206,9 +226,9 @@ cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4Arr
 
 int main(int argc, char *argv[]) {
 	
-	int iterations = 50;
+	int iterations = 10000;
 	float lambda = 0.5f;
-	float mi = -0.5f;
+	float mi = 0.5f;
 	
 	int nels, nadjs;
 	int minAdjNum, maxAdjNum;
@@ -260,6 +280,8 @@ int main(int argc, char *argv[]) {
 	err = clGetKernelWorkGroupInfo(smooth_k, deviceID, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(preferred_wg_smooth), &preferred_wg_smooth, NULL);
 	
 	cl_event smooth_evt, smooth_evt2;
+	
+	system("PAUSE");
 	printf("start\n");
 	for(int iter=0; iter<iterations; iter++) {
 		smooth_evt = smooth(queue, smooth_k, cl_vertex4Array, cl_adjArray, cl_result, nels, lambda);
