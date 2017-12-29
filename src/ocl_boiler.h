@@ -36,15 +36,16 @@ cl_platform_id select_platform() {
 	cl_uint nplats;
 	cl_int err;
 	cl_platform_id *plats;
+	
 	const char * const env = getenv("OCL_PLATFORM");
 	cl_uint nump = 0;
+	
 	if (env && env[0] != '\0')
 		nump = atoi(env);
-	nump= OCL_PLATFORM;
+	nump = OCL_PLATFORM;
+	
 	err = clGetPlatformIDs(0, NULL, &nplats);
 	ocl_check(err, "counting platforms");
-
-	printf("number of platforms: %u\n", nplats);
 
 	plats = new cl_platform_id[nplats];
 
@@ -64,15 +65,14 @@ cl_platform_id select_platform() {
 		buffer, NULL);
 	ocl_check(err, "getting platform name");
 
-	printf("selected platform %d: %s\n", nump, buffer);
+	printf(" %d Platforms: %d > %s\n", nplats, nump, buffer);
 
 	return choice;
 }
 
 // Return the ID of the device (of the given platform p) specified in the
 // OCL_DEVICE environment variable (or the first one if none specified)
-cl_device_id select_device(cl_platform_id p)
-{
+cl_device_id select_device(cl_platform_id p) {
 	cl_uint ndevs;
 	cl_int err;
 	cl_device_id *devs;
@@ -83,8 +83,6 @@ cl_device_id select_device(cl_platform_id p)
 	numd = OCL_DEVICE;
 	err = clGetDeviceIDs(p, CL_DEVICE_TYPE_ALL, 0, NULL, &ndevs);
 	ocl_check(err, "counting devices");
-
-	printf("number of devices: %u\n", ndevs);
 
 	devs = new cl_device_id[ndevs];
 
@@ -104,14 +102,13 @@ cl_device_id select_device(cl_platform_id p)
 		buffer, NULL);
 	ocl_check(err, "device name");
 
-	printf("selected device %d: %s\n", numd, buffer);
+	printf(" %d Devices: %d > %s\n", ndevs, numd, buffer);
 
 	return choice;
 }
 
 // Create a one-device context
-cl_context create_context(cl_platform_id p, cl_device_id d)
-{
+cl_context create_context(cl_platform_id p, cl_device_id d) {
 	cl_int err;
 
 	cl_context_properties ctx_prop[] = {
@@ -126,8 +123,7 @@ cl_context create_context(cl_platform_id p, cl_device_id d)
 }
 
 // Create a command queue for the given device in the given context
-cl_command_queue create_queue(cl_context ctx, cl_device_id d)
-{
+cl_command_queue create_queue(cl_context ctx, cl_device_id d) {
 	cl_int err;
 
 	cl_command_queue que = clCreateCommandQueue(ctx, d,
@@ -138,9 +134,7 @@ cl_command_queue create_queue(cl_context ctx, cl_device_id d)
 
 // Compile the device part of the program, stored in the external
 // file `fname`, for device `dev` in context `ctx`
-cl_program create_program(const char * const fname, cl_context ctx,
-	cl_device_id dev)
-{
+cl_program create_program(const char * const fname, cl_context ctx, cl_device_id dev) {
 	cl_int err, errlog;
 	cl_program prg;
 
@@ -152,19 +146,16 @@ cl_program create_program(const char * const fname, cl_context ctx,
 
 	memset(src_buf, 0, BUFSIZE);
 
-	snprintf(src_buf, BUFSIZE, "// %s#include \"%s\"\n",
-		ctime(&now), fname);
-	printf("compiling:\n%s", src_buf);
+	snprintf(src_buf, BUFSIZE, " // %s #include \"%s\"\n", ctime(&now), fname);
+	printf("\n Compiling:\n%s", src_buf);
 	prg = clCreateProgramWithSource(ctx, 1, &buf_ptr, NULL, &err);
 	ocl_check(err, "create program");
 
 	err = clBuildProgram(prg, 1, &dev, "-I.", NULL, NULL);
-	errlog = clGetProgramBuildInfo(prg, dev, CL_PROGRAM_BUILD_LOG,
-		0, NULL, &logsize);
+	errlog = clGetProgramBuildInfo(prg, dev, CL_PROGRAM_BUILD_LOG, 0, NULL, &logsize);
 	ocl_check(errlog, "get program build log size");
 	log_buf = new char[logsize];
-	errlog = clGetProgramBuildInfo(prg, dev, CL_PROGRAM_BUILD_LOG,
-		logsize, log_buf, NULL);
+	errlog = clGetProgramBuildInfo(prg, dev, CL_PROGRAM_BUILD_LOG, logsize, log_buf, NULL);
 	ocl_check(errlog, "get program build log");
 	while (logsize > 0 &&
 		(log_buf[logsize-1] == '\n' ||
@@ -177,9 +168,13 @@ cl_program create_program(const char * const fname, cl_context ctx,
 	} else {
 		log_buf[logsize] = '\0';
 	}
-	printf("=== BUILD LOG ===\n%s\n=========\n", log_buf);
+	
+	if(strlen(log_buf)!=0) {
+		printf("======== BUILD LOG =========\n");
+		printf("%s", log_buf);
+		printf("============================\n");
+	}
 	ocl_check(err, "build program");
-
 	return prg;
 }
 
@@ -187,28 +182,18 @@ cl_program create_program(const char * const fname, cl_context ctx,
 // runtimen of an event in nanoseconds and NB is the number of byte
 // read and written during the event, NB/NS is the effective bandwidth
 // expressed in GB/s
-cl_ulong runtime_ns(cl_event evt)
-{
+cl_ulong runtime_ns(cl_event evt) {
 	cl_int err;
 	cl_ulong start, end;
-	err = clGetEventProfilingInfo(evt, CL_PROFILING_COMMAND_START,
-		sizeof(start), &start, NULL);
+	err = clGetEventProfilingInfo(evt, CL_PROFILING_COMMAND_START, sizeof(start), &start, NULL);
 	ocl_check(err, "get start");
-	err = clGetEventProfilingInfo(evt, CL_PROFILING_COMMAND_END,
-		sizeof(end), &end, NULL);
+	err = clGetEventProfilingInfo(evt, CL_PROFILING_COMMAND_END, sizeof(end), &end, NULL);
 	ocl_check(err, "get end");
 	return (end - start);
 }
 
 // Runtime of an event, in milliseconds
-double runtime_ms(cl_event evt)
-{
-	return runtime_ns(evt)*1.0e-6;
-}
-
+double runtime_ms(cl_event evt) { return runtime_ns(evt)*1.0e-6; }
 
 /* round gws to the next multiple of lws */
-size_t round_mul_up(size_t gws, size_t lws)
-{
-	return ((gws + lws - 1)/lws)*lws;
-}
+size_t round_mul_up(size_t gws, size_t lws) { return ((gws + lws - 1)/lws)*lws; }

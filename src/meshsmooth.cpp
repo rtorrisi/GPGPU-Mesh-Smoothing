@@ -2,11 +2,9 @@
 #define OCL_DEVICE 0
 
 #define TEST "res/test.obj"
-#define DRAGON "res/dragon.obj"
+#define ANGEL "res/angel.obj"
 #define CUBE "res/cube_example.obj"
-#define HUMAN "res/human.obj"
-#define HEAD "res/head.obj"
-#define SUZANNE "res/suzanne.obj"
+#define NOISECUBE "res/cube_noise.obj"
 
 #include "ocl_boiler.h"
 #include <iostream>
@@ -23,7 +21,11 @@
 
 size_t preferred_wg_smooth;
 
-void readOBJFile(std::string path, int &nels, float *& vertex4Array, int &nadjs, unsigned int* &adjArray, size_t &adjmemsize){
+void readOBJFile(std::string path,
+	int &nels, float* &vertex4Array, int &nadjs, unsigned int* &adjArray,
+	int &minAdjNum, int &maxAdjNum
+	){
+	
 	std::vector< glm::vec3 > obj_vertexArray;
 	std::vector< unsigned int > faceVertexIndices;
 
@@ -45,7 +47,7 @@ void readOBJFile(std::string path, int &nels, float *& vertex4Array, int &nadjs,
 		}
 		else if ( strcmp( lineHeader, "f" ) == 0 ){
 			unsigned int faceVertexIndex[3], faceUvIndex[3], faceNormalIndex[3];
-			if(path == TEST || path == HUMAN || path == HEAD || path == SUZANNE){
+			if(path == TEST || path == ANGEL || path == NOISECUBE){
 				int matches = fscanf(file, "%d//%d %d//%d %d//%d\n", &faceVertexIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceNormalIndex[2] );
 				if (matches != 6){
 					printf("File can't be read by our simple parser : ( Try exporting with other options\n");
@@ -101,8 +103,10 @@ void readOBJFile(std::string path, int &nels, float *& vertex4Array, int &nadjs,
 
 	// Init vertex4Array
 	vertex4Array = new float[4*nels];
+	
 	int currentAdjIndex = 0;
-	//int maxadj = 0;
+	minAdjNum = adjacents[0].size();
+	maxAdjNum = 0;
 	
 	for(int i=0; i<nels; i++) {
 		glm::vec3 *vertex = &obj_vertexArray[i];
@@ -110,21 +114,23 @@ void readOBJFile(std::string path, int &nels, float *& vertex4Array, int &nadjs,
 		vertex4Array[4*i+1] = vertex->y;
 		vertex4Array[4*i+2] = vertex->z;
 
+		unsigned int currentAdjSize = adjacents[i].size();
 		unsigned int* adjIndexPtr = (unsigned int*)(&vertex4Array[4*i+3]);
 		*adjIndexPtr = ((unsigned int)currentAdjIndex)<<6;
-		*adjIndexPtr += (((unsigned int)adjacents[i].size())<<26)>>26;
+		*adjIndexPtr += (currentAdjSize<<26)>>26;
 
 		//printf("indexOfAdjs  ->  %d\n", (*adjIndexPtr)>>8);
 		//printf("numOfAdjs  ->  %d\n", ((*adjIndexPtr)<<24)>>24);
 
-		//if(adjacents[i].size() > maxadj) maxadj = adjacents[i].size();
-		currentAdjIndex += adjacents[i].size();
+		// Min & max adjacent number 
+		if(currentAdjSize > maxAdjNum) maxAdjNum = currentAdjSize;
+		else if(currentAdjSize < minAdjNum) minAdjNum = currentAdjSize;
+		
+		currentAdjIndex += currentAdjSize;
 	}
 	nadjs = currentAdjIndex;
-	//std::cout << "############# Max adjacent count " << maxadj << std::endl << std::endl;
 	
 	// Now, currentAdjIndex is the tolal adjacents numbers.
-	adjmemsize = currentAdjIndex*sizeof(unsigned int);
 	adjArray = new unsigned int[currentAdjIndex];
 	int adjIndex = 0;
 	for(int i=0; i<nels; i++) {
@@ -197,40 +203,49 @@ cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4Arr
 
 int main(int argc, char *argv[]) {
 	
-	// Hic sunt leones
+	int iterations = 50;
+	float lambda = 0.5f;
+	float mi = -0.5f;
+	
+	int nels, nadjs;
+	int minAdjNum, maxAdjNum;
+	float meanAdjNum;
+	float* vertex4Array, *result_vertex4Array;
+	unsigned int* adjArray;
+	size_t memsize, adjmemsize;
+	
 	cl_int err;
+	printf("\n======= BOILER INFO ========\n");
 	cl_platform_id platformID = select_platform();
 	cl_device_id deviceID = select_device(platformID);
 	cl_context context = create_context(platformID, deviceID);
 	cl_command_queue queue = create_queue(context, deviceID);
 	cl_program program = create_program(OCL_FILENAME, context, deviceID);
-	
-	// ###################################################################################################################
-	int nels;
-	int nadjs;
-	float meanAdjNum;
-	float* vertex4Array, *result_vertex4Array;
-	unsigned int* adjArray;
-	size_t adjmemsize;
-	
-	float lambda = 0.5f;
-	float mi = -0.5f;
-	
-	readOBJFile(TEST, nels, vertex4Array, nadjs, adjArray, adjmemsize);
-	const size_t memsize = nels*4*sizeof(float);
+	printf("============================\n");
+		
+	readOBJFile(ANGEL, nels, vertex4Array, nadjs, adjArray, minAdjNum, maxAdjNum);
 	meanAdjNum = nadjs/(float)nels;
+	memsize = 4*nels*sizeof(float);
+	adjmemsize = nadjs*sizeof(unsigned int);
 	
-	std::cout<<"=== .OBJ INFO ==="<<std::endl;
-	std::cout << " Vertex elements : " << nels << std::endl;
-	std::cout << " Adjacents elements : " << nadjs << std::endl;
-	std::cout << " Mean Adjacents elements : " << meanAdjNum << std::endl;
-	std::cout<<"================="<<std::endl<<std::endl;
-	// ###################################################################################################################
+	printf("====== SMOOTHING INFO ======\n");
+	std::cout << " # Iterations: " << iterations << std::endl;
+	std::cout << " Lambda factor: " << lambda << std::endl;
+	std::cout << " Mi factor: " << mi << std::endl;
+	printf("============================\n");
 	
+	printf("========= OBJ INFO =========\n");
+	std::cout << " # Vertex: " << nels << std::endl;
+	std::cout << " # Adjacents: " << nadjs << std::endl;
+	std::cout << " # Min vertex adjs: " << minAdjNum << std::endl;
+	std::cout << " # Max vertex adjs: " << maxAdjNum << std::endl;
+	std::cout << " # Mean vertex adjs: " << meanAdjNum << std::endl;
+	printf("============================\n\n");
+		
 	// Create Buffers
 	cl_mem cl_vertex4Array = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertex4Array, &err);
 	cl_mem cl_adjArray = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, adjmemsize, adjArray, &err);
-	cl_mem cl_result = clCreateBuffer(context, CL_MEM_READ_WRITE, memsize, NULL, &err); // TEST
+	cl_mem cl_result = clCreateBuffer(context, CL_MEM_READ_WRITE, memsize, NULL, &err); // ANGEL
 
 	// Extract kernels
 	cl_kernel smooth_k = clCreateKernel(program, "smooth", &err);
@@ -241,7 +256,7 @@ int main(int argc, char *argv[]) {
 	
 	cl_event smooth_evt, smooth_evt2;
 	printf("start\n");
-	for(int iter=0; iter<10000; iter++) {
+	for(int iter=0; iter<iterations; iter++) {
 		smooth_evt = smooth(queue, smooth_k, cl_vertex4Array, cl_adjArray, cl_result, nels, lambda);
 		err = clWaitForEvents(1, &smooth_evt);
 		ocl_check(err, "clWaitForEvents");
@@ -259,7 +274,7 @@ int main(int argc, char *argv[]) {
 	cl_event copy_evt;
 	err = clEnqueueReadBuffer(queue, cl_vertex4Array, CL_TRUE,
 		0, memsize, result_vertex4Array,
-		1, &smooth_evt, &copy_evt);
+		1, &smooth_evt2, &copy_evt);
 	ocl_check(err, "read buffer vertex4Array");
 	
 	err = clWaitForEvents(1, &copy_evt);
@@ -270,6 +285,6 @@ int main(int argc, char *argv[]) {
 	printf("copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt),
 		(2.0*memsize)/runtime_ns(copy_evt));
 		
-	writeOBJFile(TEST, result_vertex4Array);
+	writeOBJFile(ANGEL, result_vertex4Array);
 	return 0;
 }
