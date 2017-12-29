@@ -6,6 +6,9 @@
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
 
+#define IN_MESH TEST
+#define OUT_MESH "res/out.obj"
+
 #include "ocl_boiler.h"
 #include <iostream>
 #include <glm/vec4.hpp>
@@ -149,11 +152,11 @@ void readOBJFile(std::string path,
 	#endif
 }
 
-void writeOBJFile(std::string path, float *res){
+void writeOBJFile(std::string path, std::string out_path, float *res){
 	char line[512];
 
 	FILE * in_file = fopen(path.c_str(), "r");
-	FILE * out_file = fopen("res/out.obj", "w");
+	FILE * out_file = fopen(out_path.c_str(), "w");
 	
 	if(in_file == NULL){
 		printf("Impossible to open the file !\n");
@@ -223,7 +226,7 @@ int main(int argc, char *argv[]) {
 	cl_program program = create_program(OCL_FILENAME, context, deviceID);
 	printf("============================\n");
 		
-	readOBJFile(ANGEL, nels, vertex4Array, nadjs, adjArray, minAdjNum, maxAdjNum);
+	readOBJFile(IN_MESH, nels, vertex4Array, nadjs, adjArray, minAdjNum, maxAdjNum);
 	meanAdjNum = nadjs/(float)nels;
 	memsize = 4*nels*sizeof(float);
 	adjmemsize = nadjs*sizeof(unsigned int);
@@ -235,6 +238,8 @@ int main(int argc, char *argv[]) {
 	printf("============================\n");
 	
 	printf("========= OBJ INFO =========\n");
+	std::cout << " Input .obj path: " << IN_MESH << std::endl;
+	std::cout << " Output .obj path: " << OUT_MESH << std::endl;
 	std::cout << " # Vertex: " << nels << std::endl;
 	std::cout << " # Adjacents: " << nadjs << std::endl;
 	std::cout << " # Min vertex adjs: " << minAdjNum << std::endl;
@@ -285,6 +290,6 @@ int main(int argc, char *argv[]) {
 	printf("copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt),
 		(2.0*memsize)/runtime_ns(copy_evt));
 		
-	writeOBJFile(ANGEL, result_vertex4Array);
+	writeOBJFile(IN_MESH, OUT_MESH, result_vertex4Array);
 	return 0;
 }
