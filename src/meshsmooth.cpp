@@ -6,7 +6,7 @@
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
 
-#define IN_MESH TEST
+#define IN_MESH CUBE
 #define OUT_MESH "res/out.obj"
 
 #include "ocl_boiler.h"
@@ -36,10 +36,13 @@ void readOBJFile(std::string path,
 	int &nels, float* &vertex4Array, int &nadjs, unsigned int* &adjArray,
 	int &minAdjNum, int &maxAdjNum
 	){
+		
+	printf("===== LOAD & INIT DATA =====\n");
+	printf(" > Loading .obj...\n");
 	
 	std::vector< glm::vec3 > obj_vertexArray;
 	std::vector< unsigned int > faceVertexIndices;
-
+	
 	FILE * file = fopen(path.c_str(), "r");
 	if( file == NULL ){
 		printf("Impossible to open the file !\n");
@@ -77,9 +80,10 @@ void readOBJFile(std::string path,
 		}
 	}
 	
+	printf(" > .obj loaded!\n");
+	printf(" > Initializing data...\n");
 	// Init number of vertex
 	nels = obj_vertexArray.size();
-	
 	// Discover adjacents vertex for each vertex
 	std::vector< unsigned int >* adjacents = new std::vector< unsigned int >[nels];
 
@@ -88,39 +92,24 @@ void readOBJFile(std::string path,
 		unsigned int vertexID2 = faceVertexIndices[i+1] - 1;
 		unsigned int vertexID3 = faceVertexIndices[i+2] - 1;
 
-		//glm::vec3 vertex1 = obj_vertexArray[ vertexID1 ];
-		//glm::vec3 vertex2 = obj_vertexArray[ vertexID2 ];
-		//glm::vec3 vertex3 = obj_vertexArray[ vertexID3 ];
-
 		std::vector< unsigned int >* adjacent1 = &adjacents[vertexID1];
 		std::vector< unsigned int >* adjacent2 = &adjacents[vertexID2];
 		std::vector< unsigned int >* adjacent3 = &adjacents[vertexID3];
 		
-	
 		#if 1
 		orderedUniqueInsert(adjacent1, vertexID2);
 		orderedUniqueInsert(adjacent1, vertexID3);
-		
 		orderedUniqueInsert(adjacent2, vertexID1);
 		orderedUniqueInsert(adjacent2, vertexID3);
-		
 		orderedUniqueInsert(adjacent3, vertexID1);
 		orderedUniqueInsert(adjacent3, vertexID2);
 		#else
-		if (std::find(adjacent1->begin(), adjacent1->end(), vertexID2) == adjacent1->end())
-			adjacent1->push_back(vertexID2);
-		if (std::find(adjacent1->begin(), adjacent1->end(), vertexID3) == adjacent1->end())
-			adjacent1->push_back(vertexID3);
-
-		if (std::find(adjacent2->begin(), adjacent2->end(), vertexID1) == adjacent2->end())
-			adjacent2->push_back(vertexID1);
-		if (std::find(adjacent2->begin(), adjacent2->end(), vertexID3) == adjacent2->end())
-			adjacent2->push_back(vertexID3);
-
-		if (std::find(adjacent3->begin(), adjacent3->end(), vertexID1) == adjacent3->end())
-			adjacent3->push_back(vertexID1);
-		if (std::find(adjacent3->begin(), adjacent3->end(), vertexID2) == adjacent3->end())
-			adjacent3->push_back(vertexID2);
+		if (std::find(adjacent1->begin(), adjacent1->end(), vertexID2) == adjacent1->end()) adjacent1->push_back(vertexID2);
+		if (std::find(adjacent1->begin(), adjacent1->end(), vertexID3) == adjacent1->end()) adjacent1->push_back(vertexID3);
+		if (std::find(adjacent2->begin(), adjacent2->end(), vertexID1) == adjacent2->end()) adjacent2->push_back(vertexID1);
+		if (std::find(adjacent2->begin(), adjacent2->end(), vertexID3) == adjacent2->end()) adjacent2->push_back(vertexID3);
+		if (std::find(adjacent3->begin(), adjacent3->end(), vertexID1) == adjacent3->end()) adjacent3->push_back(vertexID1);
+		if (std::find(adjacent3->begin(), adjacent3->end(), vertexID2) == adjacent3->end()) adjacent3->push_back(vertexID2);
 		#endif
 	}
 	
@@ -159,20 +148,15 @@ void readOBJFile(std::string path,
 	for(int i=0; i<nels; i++) {
 		for( unsigned int vertexIndex : adjacents[i])
 			adjArray[adjIndex++] = vertexIndex;
-	}	
-
-	#if 0
-	for(int i=0; i<obj_vertexArray.size(); i++) {
-		std::cout << "adiacenti di " << i << " " << glm::to_string(obj_vertexArray[i]) << " => " << std::endl;
-
-		for(unsigned int adj : adjacents[i])  std::cout << glm::to_string(obj_vertexArray[adj]) << std::endl;	
-		std::cout << std::endl;	
-
 	}
-	#endif
+	
+	printf(" > Data initialized!\n");
+	printf("============================\n");
 }
 
 void writeOBJFile(std::string path, std::string out_path, float *res){
+	printf("========= SAVE OBJ =========\n");
+	printf(" > Saving result to .obj...\n");
 	char line[512];
 
 	FILE * in_file = fopen(path.c_str(), "r");
@@ -195,6 +179,8 @@ void writeOBJFile(std::string path, std::string out_path, float *res){
 		}
 		else fprintf(out_file, "%s", line);
 	}
+	printf(" > Result saved to .obj!\n");
+	printf("============================\n");
 }
 
 cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4Array, cl_mem cl_adjArray, cl_mem cl_result, cl_int nels, cl_float factor){
@@ -226,7 +212,7 @@ cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4Arr
 
 int main(int argc, char *argv[]) {
 	
-	int iterations = 10000;
+	int iterations = 100;
 	float lambda = 0.5f;
 	float mi = 0.5f;
 	
@@ -265,7 +251,7 @@ int main(int argc, char *argv[]) {
 	std::cout << " # Min vertex adjs: " << minAdjNum << std::endl;
 	std::cout << " # Max vertex adjs: " << maxAdjNum << std::endl;
 	std::cout << " # Mean vertex adjs: " << meanAdjNum << std::endl;
-	printf("============================\n\n");
+	printf("============================\n");
 		
 	// Create Buffers
 	cl_mem cl_vertex4Array = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertex4Array, &err);
@@ -279,10 +265,10 @@ int main(int argc, char *argv[]) {
 	// Set preferred_wg size from device info
 	err = clGetKernelWorkGroupInfo(smooth_k, deviceID, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(preferred_wg_smooth), &preferred_wg_smooth, NULL);
 	
-	cl_event smooth_evt, smooth_evt2;
 	
-	system("PAUSE");
-	printf("start\n");
+	printf("====== KERNEL LAUNCH =======\n");
+	cl_event smooth_evt, smooth_evt2;
+	printf("start / ");
 	for(int iter=0; iter<iterations; iter++) {
 		smooth_evt = smooth(queue, smooth_k, cl_vertex4Array, cl_adjArray, cl_result, nels, lambda);
 		err = clWaitForEvents(1, &smooth_evt);
@@ -311,6 +297,8 @@ int main(int argc, char *argv[]) {
 		(2.0*memsize + meanAdjNum*memsize + meanAdjNum*nels*sizeof(int))/runtime_ns(smooth_evt));
 	printf("copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt),
 		(2.0*memsize)/runtime_ns(copy_evt));
+		
+	printf("============================\n");
 		
 	writeOBJFile(IN_MESH, OUT_MESH, result_vertex4Array);
 	return 0;

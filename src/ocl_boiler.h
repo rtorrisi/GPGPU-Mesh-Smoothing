@@ -147,7 +147,7 @@ cl_program create_program(const char * const fname, cl_context ctx, cl_device_id
 	memset(src_buf, 0, BUFSIZE);
 
 	snprintf(src_buf, BUFSIZE, " // %s #include \"%s\"\n", ctime(&now), fname);
-	printf("\n Compiling:\n%s", src_buf);
+	printf("\n > Compiling:\n%s", src_buf);
 	prg = clCreateProgramWithSource(ctx, 1, &buf_ptr, NULL, &err);
 	ocl_check(err, "create program");
 
