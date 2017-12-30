@@ -38,7 +38,7 @@ void readOBJFile(std::string path,
 	){
 		
 	printf("===== LOAD & INIT DATA =====\n");
-	printf(" > Loading .obj...\n");
+	printf(" > Loading %s...\n", IN_MESH);
 	
 	std::vector< glm::vec3 > obj_vertex_vector;
 	std::vector< unsigned int > obj_facesVertexIndex_vector;
@@ -61,18 +61,20 @@ void readOBJFile(std::string path,
 		}
 		else if ( strcmp( lineHeader, "f" ) == 0 ){
 			unsigned int faceVertexIndex[3], faceUvIndex[3], faceNormalIndex[3];
-			if(path == TEST || path == ANGEL || path == NOISECUBE){
-				int matches = fscanf(file, "%d//%d %d//%d %d//%d\n", &faceVertexIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceNormalIndex[2] );
-				if (matches != 6){
-					printf("File can't be read by our simple parser : ( Try exporting with other options\n");
-					return;
-				}
-			} else {
-				int matches = fscanf(file, "%d/%d/%d %d/%d/%d %d/%d/%d\n", &faceVertexIndex[0], &faceUvIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceUvIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceUvIndex[2], &faceNormalIndex[2] );
-				if (matches != 9){
-					printf("File can't be read by our simple parser : ( Try exporting with other options\n");
-					return;
-				}				
+			
+			char line[512];
+			fgets( line, 512, file);
+			
+			int	match = sscanf(line, "%d/%d/%d %d/%d/%d %d/%d/%d\n", &faceVertexIndex[0], &faceUvIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceUvIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceUvIndex[2], &faceNormalIndex[2]);
+			if(match < 9)
+				match = sscanf(line,"%d//%d %d//%d %d//%d\n", &faceVertexIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceNormalIndex[2]);
+			if(match < 6)
+				match = sscanf(line,"%d// %d// %d//\n", &faceVertexIndex[0], &faceVertexIndex[1], &faceVertexIndex[2]);
+			if(match < 3)
+				match = sscanf(line,"%d %d %d\n", &faceVertexIndex[0], &faceVertexIndex[1], &faceVertexIndex[2]);
+			if(match < 3){
+				printf("File can't be read by parser. Try exporting with other options\n");
+				return;
 			}
 			obj_facesVertexIndex_vector.push_back(faceVertexIndex[0]);
 			obj_facesVertexIndex_vector.push_back(faceVertexIndex[1]);
@@ -80,7 +82,7 @@ void readOBJFile(std::string path,
 		}
 	}
 	
-	printf(" > .obj loaded!\n");
+	printf(" > %s loaded!\n", IN_MESH);
 	printf(" > Initializing data...\n");
 	
 	// Init number of vertex
@@ -161,7 +163,7 @@ void readOBJFile(std::string path,
 
 void writeOBJFile(std::string path, std::string out_path, float *res){
 	printf("========= SAVE OBJ =========\n");
-	printf(" > Saving result to .obj...\n");
+	printf(" > Saving result to %s...\n", OUT_MESH);
 	char line[512];
 
 	FILE * in_file = fopen(path.c_str(), "r");
@@ -184,7 +186,7 @@ void writeOBJFile(std::string path, std::string out_path, float *res){
 		}
 		else fprintf(out_file, "%s", line);
 	}
-	printf(" > Result saved to .obj!\n");
+	printf(" > Result saved to %s!\n", OUT_MESH);
 	printf("============================\n");
 }
 
