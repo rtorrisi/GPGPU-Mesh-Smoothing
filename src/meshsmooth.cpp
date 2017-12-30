@@ -69,8 +69,6 @@ void readOBJFile(std::string path,
 			if(match < 9)
 				match = sscanf(line,"%d//%d %d//%d %d//%d\n", &faceVertexIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceNormalIndex[2]);
 			if(match < 6)
-				match = sscanf(line,"%d// %d// %d//\n", &faceVertexIndex[0], &faceVertexIndex[1], &faceVertexIndex[2]);
-			if(match < 3)
 				match = sscanf(line,"%d %d %d\n", &faceVertexIndex[0], &faceVertexIndex[1], &faceVertexIndex[2]);
 			if(match < 3){
 				printf("File can't be read by parser. Try exporting with other options\n");
