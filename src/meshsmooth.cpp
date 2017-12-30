@@ -1,7 +1,7 @@
 #define OCL_PLATFORM 0
 #define OCL_DEVICE 0
 
-#define TEST "res/suzanne.obj"
+#define TEST "res/test.obj"
 #define ANGEL "res/angel.obj"
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
@@ -24,24 +24,24 @@
 
 size_t preferred_wg_smooth;
 
-void orderedUniqueInsert(std::vector< unsigned int >*adjacents, unsigned int vertexID) {
+void orderedUniqueInsert(std::vector< unsigned int >*vertexAdjacents, unsigned int vertexID) {
 	std::vector< unsigned int >::iterator it;
-	for(it = adjacents->begin(); it != adjacents->end() && *it < vertexID; it++) {}
-	if(it == adjacents->end() || *it != vertexID){
-		adjacents->insert(it, vertexID);
+	for(it = vertexAdjacents->begin(); it != vertexAdjacents->end() && *it < vertexID; it++) {}
+	if(it == vertexAdjacents->end() || *it != vertexID){
+		vertexAdjacents->insert(it, vertexID);
 	}
 }
 
 void readOBJFile(std::string path,
-	int &nels, float* &vertex4Array, int &nadjs, unsigned int* &adjArray,
-	int &minAdjNum, int &maxAdjNum
+	unsigned int &nels, float* &vertex4_array, unsigned int &nadjs, unsigned int* &adjs_array,
+	unsigned int &minAdjsCount, unsigned int &maxAdjsCount
 	){
 		
 	printf("===== LOAD & INIT DATA =====\n");
 	printf(" > Loading .obj...\n");
 	
-	std::vector< glm::vec3 > obj_vertexArray;
-	std::vector< unsigned int > faceVertexIndices;
+	std::vector< glm::vec3 > obj_vertex_vector;
+	std::vector< unsigned int > obj_facesVertexIndex_vector;
 	
 	FILE * file = fopen(path.c_str(), "r");
 	if( file == NULL ){
@@ -57,7 +57,7 @@ void readOBJFile(std::string path,
 		if ( strcmp( lineHeader, "v" ) == 0 ){
 			glm::vec3 vertex;
 			fscanf(file, "%f %f %f\n", &vertex.x, &vertex.y, &vertex.z );
-			obj_vertexArray.push_back(vertex);
+			obj_vertex_vector.push_back(vertex);
 		}
 		else if ( strcmp( lineHeader, "f" ) == 0 ){
 			unsigned int faceVertexIndex[3], faceUvIndex[3], faceNormalIndex[3];
@@ -74,27 +74,29 @@ void readOBJFile(std::string path,
 					return;
 				}				
 			}
-			faceVertexIndices.push_back(faceVertexIndex[0]);
-			faceVertexIndices.push_back(faceVertexIndex[1]);
-			faceVertexIndices.push_back(faceVertexIndex[2]);
+			obj_facesVertexIndex_vector.push_back(faceVertexIndex[0]);
+			obj_facesVertexIndex_vector.push_back(faceVertexIndex[1]);
+			obj_facesVertexIndex_vector.push_back(faceVertexIndex[2]);
 		}
 	}
 	
 	printf(" > .obj loaded!\n");
 	printf(" > Initializing data...\n");
+	
 	// Init number of vertex
-	nels = obj_vertexArray.size();
+	nels = obj_vertex_vector.size();
+	
 	// Discover adjacents vertex for each vertex
-	std::vector< unsigned int >* adjacents = new std::vector< unsigned int >[nels];
+	std::vector< unsigned int >* obj_adjacents_arrayVector = new std::vector< unsigned int >[nels];
 
-	for(int i=0; i<faceVertexIndices.size(); i+=3){
-		unsigned int vertexID1 = faceVertexIndices[i] - 1;
-		unsigned int vertexID2 = faceVertexIndices[i+1] - 1;
-		unsigned int vertexID3 = faceVertexIndices[i+2] - 1;
+	for(int i=0; i<obj_facesVertexIndex_vector.size(); i+=3){
+		unsigned int vertexID1 = obj_facesVertexIndex_vector[i] - 1;
+		unsigned int vertexID2 = obj_facesVertexIndex_vector[i+1] - 1;
+		unsigned int vertexID3 = obj_facesVertexIndex_vector[i+2] - 1;
 
-		std::vector< unsigned int >* adjacent1 = &adjacents[vertexID1];
-		std::vector< unsigned int >* adjacent2 = &adjacents[vertexID2];
-		std::vector< unsigned int >* adjacent3 = &adjacents[vertexID3];
+		std::vector< unsigned int >* adjacent1 = &obj_adjacents_arrayVector[vertexID1];
+		std::vector< unsigned int >* adjacent2 = &obj_adjacents_arrayVector[vertexID2];
+		std::vector< unsigned int >* adjacent3 = &obj_adjacents_arrayVector[vertexID3];
 		
 		#if 1
 		orderedUniqueInsert(adjacent1, vertexID2);
@@ -113,41 +115,44 @@ void readOBJFile(std::string path,
 		#endif
 	}
 	
-	// Init vertex4Array
-	vertex4Array = new float[4*nels];
+	/* print adjacents per vertex
+	for( int i=0; i<nels; i++ ) for(unsigned int index : obj_adjacents_arrayVector[i]) printf("vertex %d => adj %d\n", i, index);
+	*/
 	
-	int currentAdjIndex = 0;
-	minAdjNum = adjacents[0].size();
-	maxAdjNum = 0;
+	// Init vertex4_array
+	vertex4_array = new float[4*nels];
+	
+	unsigned int currentAdjStartIndex = 0;
+	minAdjsCount = obj_adjacents_arrayVector[0].size();
+	maxAdjsCount = 0;
 	
 	for(int i=0; i<nels; i++) {
-		glm::vec3 *vertex = &obj_vertexArray[i];
-		vertex4Array[4*i] = vertex->x;
-		vertex4Array[4*i+1] = vertex->y;
-		vertex4Array[4*i+2] = vertex->z;
+		glm::vec3 *vertex = &obj_vertex_vector[i];
+		vertex4_array[4*i] = vertex->x;
+		vertex4_array[4*i+1] = vertex->y;
+		vertex4_array[4*i+2] = vertex->z;
 
-		unsigned int currentAdjSize = adjacents[i].size();
-		unsigned int* adjIndexPtr = (unsigned int*)(&vertex4Array[4*i+3]);
-		*adjIndexPtr = ((unsigned int)currentAdjIndex)<<6;
-		*adjIndexPtr += (currentAdjSize<<26)>>26;
+		unsigned int currentAdjsCount = obj_adjacents_arrayVector[i].size();
+		unsigned int* adjIndexPtr = (unsigned int*)(&vertex4_array[4*i+3]);
+		*adjIndexPtr = ((unsigned int)currentAdjStartIndex)<<6;
+		*adjIndexPtr += (currentAdjsCount<<26)>>26;
 
-		//printf("indexOfAdjs  ->  %d\n", (*adjIndexPtr)>>8);
-		//printf("numOfAdjs  ->  %d\n", ((*adjIndexPtr)<<24)>>24);
+		//printf("indexOfAdjs -> %d\nnumOfAdjs -> %d\n", (*adjIndexPtr)>>8, ((*adjIndexPtr)<<24)>>24);
 
 		// Min & max adjacent number 
-		if(currentAdjSize > maxAdjNum) maxAdjNum = currentAdjSize;
-		else if(currentAdjSize < minAdjNum) minAdjNum = currentAdjSize;
+		if(currentAdjsCount > maxAdjsCount) maxAdjsCount = currentAdjsCount;
+		else if(currentAdjsCount < minAdjsCount) minAdjsCount = currentAdjsCount;
 		
-		currentAdjIndex += currentAdjSize;
+		currentAdjStartIndex += currentAdjsCount;
 	}
-	nadjs = currentAdjIndex;
+	nadjs = currentAdjStartIndex;
 	
-	// Now, currentAdjIndex is the tolal adjacents numbers.
-	adjArray = new unsigned int[currentAdjIndex];
-	int adjIndex = 0;
+	// Now, currentAdjStartIndex is the total adjacents number.
+	adjs_array = new unsigned int[currentAdjStartIndex];
+	unsigned int adjIndex = 0;
 	for(int i=0; i<nels; i++) {
-		for( unsigned int vertexIndex : adjacents[i])
-			adjArray[adjIndex++] = vertexIndex;
+		for( unsigned int vertexIndex : obj_adjacents_arrayVector[i])
+			adjs_array[adjIndex++] = vertexIndex;
 	}
 	
 	printf(" > Data initialized!\n");
@@ -183,7 +188,7 @@ void writeOBJFile(std::string path, std::string out_path, float *res){
 	printf("============================\n");
 }
 
-cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4Array, cl_mem cl_adjArray, cl_mem cl_result, cl_int nels, cl_float factor){
+cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4Array, cl_mem cl_adjsArray, cl_mem cl_result, cl_uint nels, cl_float factor){
 	size_t gws[] = { round_mul_up(nels, preferred_wg_smooth) };
 	cl_event smooth_evt;
 	cl_int err;
@@ -193,7 +198,7 @@ cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4Arr
 	// Setting arguments
 	err = clSetKernelArg(smooth_k, 0, sizeof(cl_vertex4Array), &cl_vertex4Array);
 	ocl_check(err, "set smooth arg 0");
-	err = clSetKernelArg(smooth_k, 1, sizeof(cl_adjArray), &cl_adjArray);
+	err = clSetKernelArg(smooth_k, 1, sizeof(cl_adjsArray), &cl_adjsArray);
 	ocl_check(err, "set smooth arg 1");
 	err = clSetKernelArg(smooth_k, 2, sizeof(cl_result), &cl_result);
 	ocl_check(err, "set smooth arg 2");
@@ -212,7 +217,7 @@ cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4Arr
 
 int main(int argc, char *argv[]) {
 	
-	int iterations = 1;
+	unsigned int iterations = 1;
 	float lambda = 0.5f;
 	float mi = 0.5f;
 	
@@ -223,12 +228,11 @@ int main(int argc, char *argv[]) {
 		mi = atof(argv[3]);
 	}
 	
-	int nels, nadjs;
-	int minAdjNum, maxAdjNum;
-	float meanAdjNum;
-	float* vertex4Array, *result_vertex4Array;
-	unsigned int* adjArray;
-	size_t memsize, adjmemsize;
+	unsigned int nels, nadjs, minAdjsCount, maxAdjsCount;
+	float meanAdjsCount;
+	float* vertex4_array, *result_vertex4Array;
+	unsigned int* adjs_array;
+	size_t memsize, ajdsmemsize;
 	
 	cl_int err;
 	printf("\n======= BOILER INFO ========\n");
@@ -239,10 +243,10 @@ int main(int argc, char *argv[]) {
 	cl_program program = create_program(OCL_FILENAME, context, deviceID);
 	printf("============================\n");
 		
-	readOBJFile(IN_MESH, nels, vertex4Array, nadjs, adjArray, minAdjNum, maxAdjNum);
-	meanAdjNum = nadjs/(float)nels;
+	readOBJFile(IN_MESH, nels, vertex4_array, nadjs, adjs_array, minAdjsCount, maxAdjsCount);
+	meanAdjsCount = nadjs/(float)nels;
 	memsize = 4*nels*sizeof(float);
-	adjmemsize = nadjs*sizeof(unsigned int);
+	ajdsmemsize = nadjs*sizeof(unsigned int);
 	
 	printf("====== SMOOTHING INFO ======\n");
 	std::cout << " # Iterations: " << iterations << std::endl;
@@ -254,15 +258,15 @@ int main(int argc, char *argv[]) {
 	std::cout << " Input .obj path: " << IN_MESH << std::endl;
 	std::cout << " Output .obj path: " << OUT_MESH << std::endl;
 	std::cout << " # Vertex: " << nels << std::endl;
-	std::cout << " # Adjacents: " << nadjs << std::endl;
-	std::cout << " # Min vertex adjs: " << minAdjNum << std::endl;
-	std::cout << " # Max vertex adjs: " << maxAdjNum << std::endl;
-	std::cout << " # Mean vertex adjs: " << meanAdjNum << std::endl;
+	std::cout << " # obj_adjacents_arrayVector: " << nadjs << std::endl;
+	std::cout << " # Min vertex adjs: " << minAdjsCount << std::endl;
+	std::cout << " # Max vertex adjs: " << maxAdjsCount << std::endl;
+	std::cout << " # Mean vertex adjs: " << meanAdjsCount << std::endl;
 	printf("============================\n");
 		
 	// Create Buffers
-	cl_mem cl_vertex4Array = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertex4Array, &err);
-	cl_mem cl_adjArray = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, adjmemsize, adjArray, &err);
+	cl_mem cl_vertex4Array = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertex4_array, &err);
+	cl_mem cl_adjsArray = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, ajdsmemsize, adjs_array, &err);
 	cl_mem cl_result = clCreateBuffer(context, CL_MEM_READ_WRITE, memsize, NULL, &err); // ANGEL
 
 	// Extract kernels
@@ -277,11 +281,11 @@ int main(int argc, char *argv[]) {
 	cl_event smooth_evt, smooth_evt2;
 	printf("start / ");
 	for(int iter=0; iter<iterations; iter++) {
-		smooth_evt = smooth(queue, smooth_k, cl_vertex4Array, cl_adjArray, cl_result, nels, lambda);
+		smooth_evt = smooth(queue, smooth_k, cl_vertex4Array, cl_adjsArray, cl_result, nels, lambda);
 		err = clWaitForEvents(1, &smooth_evt);
 		ocl_check(err, "clWaitForEvents");
 		
-		smooth_evt2 = smooth(queue, smooth_k, cl_result, cl_adjArray, cl_vertex4Array, nels, mi);
+		smooth_evt2 = smooth(queue, smooth_k, cl_result, cl_adjsArray, cl_vertex4Array, nels, mi);
 		err = clWaitForEvents(1, &smooth_evt2);
 		ocl_check(err, "clWaitForEvents");
 	}
@@ -295,13 +299,13 @@ int main(int argc, char *argv[]) {
 	err = clEnqueueReadBuffer(queue, cl_vertex4Array, CL_TRUE,
 		0, memsize, result_vertex4Array,
 		1, &smooth_evt2, &copy_evt);
-	ocl_check(err, "read buffer vertex4Array");
+	ocl_check(err, "read buffer vertex4_array");
 	
 	err = clWaitForEvents(1, &copy_evt);
 	ocl_check(err, "clWaitForEvents");
 	
 	printf("smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
-		(2.0*memsize + meanAdjNum*memsize + meanAdjNum*nels*sizeof(int))/runtime_ns(smooth_evt));
+		(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
 	printf("copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt),
 		(2.0*memsize)/runtime_ns(copy_evt));
 		

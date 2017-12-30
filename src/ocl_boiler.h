@@ -170,9 +170,9 @@ cl_program create_program(const char * const fname, cl_context ctx, cl_device_id
 	}
 	
 	if(strlen(log_buf)!=0) {
+		printf("============================\n");
 		printf("======== BUILD LOG =========\n");
 		printf("%s", log_buf);
-		printf("============================\n");
 	}
 	ocl_check(err, "build program");
 	return prg;
