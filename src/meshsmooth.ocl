@@ -1,7 +1,11 @@
 #define INDEX_BITS 26
 #define COUNT_BITS 6
 
-kernel void smooth(global float4 * restrict vertex4_array, global unsigned int* restrict adjs_array, global float4 * restrict result, unsigned int nels, float factor)
+kernel void smooth(
+	global float4 * restrict vertex4_array,
+	global unsigned int* restrict adjs_array,
+	global float4 * restrict result_vertex4_array,
+	unsigned int nels, float factor)
 {	
 	unsigned int i = get_global_id(0);
 	if(i >= nels) return;
@@ -19,12 +23,12 @@ kernel void smooth(global float4 * restrict vertex4_array, global unsigned int* 
 	{
 		float4 adj = vertex4_array[adjs_array[adjsIndexOffset+adjIndex]];
 		umbrellaOperator += ( adj-vertex );
-		//printf("Adj %d of %d -> %f / %f / %f\n", adjIndex, i, adj.x, adj.y, adj.z);
+		printf("Adj %d of %d -> %f / %f / %f\n", adjIndex, i, adj.x, adj.y, adj.z);
 	}
 	umbrellaOperator /= adjsCount;
 	float4 res = vertex + factor*umbrellaOperator;
 	res.w = lastComponent;
-	result[i] = res;
+	result_vertex4_array[i] = res;
 	//printf("result vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, res.x, res.y, res.z, adjIndexOffset, adjCount);
 }
 

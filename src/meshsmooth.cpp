@@ -159,7 +159,7 @@ void readOBJFile(std::string path,
 	printf("============================\n");
 }
 
-void writeOBJFile(std::string path, std::string out_path, float *res){
+void writeOBJFile(std::string path, std::string out_path, float *result_vertex4_array){
 	printf("========= SAVE OBJ =========\n");
 	printf(" > Saving result to %s...\n", OUT_MESH);
 	char line[512];
@@ -171,7 +171,7 @@ void writeOBJFile(std::string path, std::string out_path, float *res){
 		printf("Impossible to open the file !\n");
 		return;
 	}
-	if(res == NULL) {
+	if(result_vertex4_array == NULL) {
 		printf("Result input error !\n");
 		return;
 	}
@@ -179,7 +179,7 @@ void writeOBJFile(std::string path, std::string out_path, float *res){
 	int i=0;
 	while (fgets(line, sizeof line, in_file) != NULL) {
 		if ( line[0] == 'v' && line[1] == ' ') {
-			fprintf(out_file, "v %f %f %f\n", res[4*i], res[4*i+1], res[4*i+2]);
+			fprintf(out_file, "v %f %f %f\n", result_vertex4_array[4*i], result_vertex4_array[4*i+1], result_vertex4_array[4*i+2]);
 			i++;
 		}
 		else fprintf(out_file, "%s", line);
@@ -188,7 +188,7 @@ void writeOBJFile(std::string path, std::string out_path, float *res){
 	printf("============================\n");
 }
 
-cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4Array, cl_mem cl_adjsArray, cl_mem cl_result, cl_uint nels, cl_float factor){
+cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor){
 	size_t gws[] = { round_mul_up(nels, preferred_wg_smooth) };
 	cl_event smooth_evt;
 	cl_int err;
@@ -196,11 +196,11 @@ cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4Arr
 	//printf("smooth gws: %d | %zu => %zu\n", nels, preferred_wg_smooth, gws[0]);
 
 	// Setting arguments
-	err = clSetKernelArg(smooth_k, 0, sizeof(cl_vertex4Array), &cl_vertex4Array);
+	err = clSetKernelArg(smooth_k, 0, sizeof(cl_vertex4_array), &cl_vertex4_array);
 	ocl_check(err, "set smooth arg 0");
-	err = clSetKernelArg(smooth_k, 1, sizeof(cl_adjsArray), &cl_adjsArray);
+	err = clSetKernelArg(smooth_k, 1, sizeof(cl_adjs_array), &cl_adjs_array);
 	ocl_check(err, "set smooth arg 1");
-	err = clSetKernelArg(smooth_k, 2, sizeof(cl_result), &cl_result);
+	err = clSetKernelArg(smooth_k, 2, sizeof(cl_result_vertex4_array), &cl_result_vertex4_array);
 	ocl_check(err, "set smooth arg 2");
 	err = clSetKernelArg(smooth_k, 3, sizeof(nels), &nels);
 	ocl_check(err, "set smooth arg 3");
@@ -230,7 +230,7 @@ int main(int argc, char *argv[]) {
 	
 	unsigned int nels, nadjs, minAdjsCount, maxAdjsCount;
 	float meanAdjsCount;
-	float* vertex4_array, *result_vertex4Array;
+	float* vertex4_array, *result_vertex4_array;
 	unsigned int* adjs_array;
 	size_t memsize, ajdsmemsize;
 	
@@ -265,9 +265,9 @@ int main(int argc, char *argv[]) {
 	printf("============================\n");
 		
 	// Create Buffers
-	cl_mem cl_vertex4Array = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertex4_array, &err);
-	cl_mem cl_adjsArray = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, ajdsmemsize, adjs_array, &err);
-	cl_mem cl_result = clCreateBuffer(context, CL_MEM_READ_WRITE, memsize, NULL, &err); // ANGEL
+	cl_mem cl_vertex4_array = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertex4_array, &err);
+	cl_mem cl_adjs_array = clCreateBuffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, ajdsmemsize, adjs_array, &err);
+	cl_mem cl_result_vertex4_array = clCreateBuffer(context, CL_MEM_READ_WRITE, memsize, NULL, &err); // ANGEL
 
 	// Extract kernels
 	cl_kernel smooth_k = clCreateKernel(program, "smooth", &err);
@@ -281,23 +281,23 @@ int main(int argc, char *argv[]) {
 	cl_event smooth_evt, smooth_evt2;
 	printf("start / ");
 	for(int iter=0; iter<iterations; iter++) {
-		smooth_evt = smooth(queue, smooth_k, cl_vertex4Array, cl_adjsArray, cl_result, nels, lambda);
+		smooth_evt = smooth(queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda);
 		err = clWaitForEvents(1, &smooth_evt);
 		ocl_check(err, "clWaitForEvents");
 		
-		smooth_evt2 = smooth(queue, smooth_k, cl_result, cl_adjsArray, cl_vertex4Array, nels, mi);
+		smooth_evt2 = smooth(queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_vertex4_array, nels, mi);
 		err = clWaitForEvents(1, &smooth_evt2);
 		ocl_check(err, "clWaitForEvents");
 	}
 	printf("stop\n");
 	
 	// Copy result
-	result_vertex4Array = new float[4*nels];
-	if (!result_vertex4Array) printf("error res\n");
+	result_vertex4_array = new float[4*nels];
+	if (!result_vertex4_array) printf("error res\n");
 
 	cl_event copy_evt;
-	err = clEnqueueReadBuffer(queue, cl_vertex4Array, CL_TRUE,
-		0, memsize, result_vertex4Array,
+	err = clEnqueueReadBuffer(queue, cl_vertex4_array, CL_TRUE,
+		0, memsize, result_vertex4_array,
 		1, &smooth_evt2, &copy_evt);
 	ocl_check(err, "read buffer vertex4_array");
 	
@@ -311,6 +311,6 @@ int main(int argc, char *argv[]) {
 		
 	printf("============================\n");
 		
-	writeOBJFile(IN_MESH, OUT_MESH, result_vertex4Array);
+	writeOBJFile(IN_MESH, OUT_MESH, result_vertex4_array);
 	return 0;
 }
