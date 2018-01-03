@@ -235,7 +235,7 @@ int main(int argc, char *argv[]) {
 	size_t memsize, ajdsmemsize;
 	
 	cl_int err;
-	printf("\n======= BOILER INFO ========\n");
+	printf("\n======= OPENCL INFO ========\n");
 	cl_platform_id platformID = select_platform();
 	cl_device_id deviceID = select_device(platformID);
 	cl_context context = create_context(platformID, deviceID);

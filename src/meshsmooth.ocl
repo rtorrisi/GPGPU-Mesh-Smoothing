@@ -3,7 +3,7 @@
 
 kernel void smooth(
 	global float4 * restrict vertex4_array,
-	global unsigned int* restrict adjs_array,
+	global unsigned int * restrict adjs_array,
 	global float4 * restrict result_vertex4_array,
 	unsigned int nels, float factor)
 {	
@@ -23,7 +23,7 @@ kernel void smooth(
 	{
 		float4 adj = vertex4_array[adjs_array[adjsIndexOffset+adjIndex]];
 		umbrellaOperator += ( adj-vertex );
-		printf("Adj %d of %d -> %f / %f / %f\n", adjIndex, i, adj.x, adj.y, adj.z);
+		//printf("Adj %d of %d -> %f / %f / %f\n", adjIndex, i, adj.x, adj.y, adj.z);
 	}
 	umbrellaOperator /= adjsCount;
 	float4 res = vertex + factor*umbrellaOperator;
