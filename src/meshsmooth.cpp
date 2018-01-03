@@ -72,7 +72,7 @@ void readOBJFile(std::string path,
 				match = sscanf(line,"%d %d %d\n", &faceVertexIndex[0], &faceVertexIndex[1], &faceVertexIndex[2]);
 			if(match < 3){
 				printf("File can't be read by parser. Try exporting with other options\n");
-				return;
+				exit(1);
 			}
 			obj_facesVertexIndex_vector.push_back(faceVertexIndex[0]);
 			obj_facesVertexIndex_vector.push_back(faceVertexIndex[1]);
