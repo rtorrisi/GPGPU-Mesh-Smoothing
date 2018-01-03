@@ -1,12 +1,12 @@
 #define OCL_PLATFORM 0
 #define OCL_DEVICE 0
 
-#define TEST "res/test.obj"
+#define TEST "res/wrestlers.obj"
 #define ANGEL "res/angel.obj"
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
 
-#define IN_MESH CUBE
+#define IN_MESH TEST
 #define OUT_MESH "res/out.obj"
 
 #include "ocl_boiler.h"
@@ -119,6 +119,47 @@ void readOBJFile(std::string path,
 	for( int i=0; i<nels; i++ ) for(unsigned int index : obj_adjacents_arrayVector[i]) printf("vertex %d => adj %d\n", i, index);
 	*/
 	
+	printf("\n ALGORITMO DI DANIELE\n");
+	struct vertex_struct{
+		
+		unsigned int currentIndex;
+		unsigned int obj_vertex_vector_Index;
+		std::vector<vertex_struct*> adjs;
+		unsigned int adjsCount;
+	
+	};
+	
+	vertex_struct** vertex_arrayStruct = new vertex_struct*[nels];
+	for(int i=0; i<nels; i++){
+		vertex_struct* v = new vertex_struct();
+		v->currentIndex=i;
+		v->obj_vertex_vector_Index=i;
+		v->adjsCount = obj_adjacents_arrayVector[i].size();
+		vertex_arrayStruct[i]=v;
+	}
+	for(int i=0; i<nels; i++){
+		for(unsigned int index : obj_adjacents_arrayVector[i]){		
+			vertex_arrayStruct[i]->adjs.push_back(vertex_arrayStruct[index]);
+		}
+	}
+	
+	for(int i=0; i<nels-1; i++){
+		for(int j=i+1; j<nels; j++){
+			vertex_struct* a = vertex_arrayStruct[i];
+			vertex_struct* b = vertex_arrayStruct[j];
+			if(a->adjsCount < b->adjsCount){
+				a->currentIndex=j;
+				b->currentIndex=i;
+				vertex_arrayStruct[i] = b;
+				vertex_arrayStruct[j] = a;
+			}
+		}
+	}
+	
+	printf("\n FINE ALGORITMO DI DANIELE\n");
+	
+	
+	
 	// Init vertex4_array
 	vertex4_array = new float[4*nels];
 	
@@ -188,7 +229,7 @@ void writeOBJFile(std::string path, std::string out_path, float *result_vertex4_
 	printf("============================\n");
 }
 
-cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor){
+cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingListDim, cl_event* waitingList){
 	size_t gws[] = { round_mul_up(nels, preferred_wg_smooth) };
 	cl_event smooth_evt;
 	cl_int err;
@@ -209,7 +250,7 @@ cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_ar
 
 	err = clEnqueueNDRangeKernel(queue, smooth_k,
 		1, NULL, gws, NULL, /* griglia di lancio */
-		0, NULL, /* waiting list */
+		waintingListDim, waintingListDim==0?NULL:waitingList, /* waiting list */
 		&smooth_evt);
 	ocl_check(err, "enqueue kernel smooth");
 	return smooth_evt;
@@ -217,7 +258,7 @@ cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_ar
 
 int main(int argc, char *argv[]) {
 	
-	unsigned int iterations = 1;
+	unsigned int iterations = 10;
 	float lambda = 0.5f;
 	float mi = 0.5f;
 	
@@ -280,16 +321,11 @@ int main(int argc, char *argv[]) {
 	printf("====== KERNEL LAUNCH =======\n");
 	cl_event smooth_evt, smooth_evt2;
 	printf("start / ");
+	
 	for(int iter=0; iter<iterations; iter++) {
-		smooth_evt = smooth(queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda);
-		err = clWaitForEvents(1, &smooth_evt);
-		ocl_check(err, "clWaitForEvents");
-		
-		smooth_evt2 = smooth(queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_vertex4_array, nels, mi);
-		err = clWaitForEvents(1, &smooth_evt2);
-		ocl_check(err, "clWaitForEvents");
+		smooth_evt = smooth(queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
+		smooth_evt2 = smooth(queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_vertex4_array, nels, mi, 1, &smooth_evt);
 	}
-	printf("stop\n");
 	
 	// Copy result
 	result_vertex4_array = new float[4*nels];
@@ -300,6 +336,8 @@ int main(int argc, char *argv[]) {
 		0, memsize, result_vertex4_array,
 		1, &smooth_evt2, &copy_evt);
 	ocl_check(err, "read buffer vertex4_array");
+	
+	printf("stop\n");
 	
 	err = clWaitForEvents(1, &copy_evt);
 	ocl_check(err, "clWaitForEvents");
