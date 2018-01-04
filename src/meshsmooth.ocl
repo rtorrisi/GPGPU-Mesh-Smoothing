@@ -16,7 +16,7 @@ kernel void smooth(
 	unsigned int adjsInfo = *(unsigned int *)&lastComponent;
 	unsigned int adjsIndexOffset = adjsInfo>>COUNT_BITS;
 	unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
-	//printf("vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, vertex.x, vertex.y, vertex.z, adjIndexOffset, adjCount);
+	//printf("vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, vertex.x, vertex.y, vertex.z, adjsIndexOffset, adjsCount);
 	
 	float4 umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
 	for(int adjIndex=0; adjIndex<adjsCount; adjIndex++)
@@ -29,6 +29,6 @@ kernel void smooth(
 	float4 res = vertex + factor*umbrellaOperator;
 	res.w = lastComponent;
 	result_vertex4_array[i] = res;
-	//printf("result vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, res.x, res.y, res.z, adjIndexOffset, adjCount);
+	//printf("result vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, res.x, res.y, res.z, adjsIndexOffset, adjsCount);
 }
 

@@ -1,12 +1,13 @@
 #define OCL_PLATFORM 1
 #define OCL_DEVICE 0
 
-#define TEST "res/suzanne.obj"
+//#define TEST "res/suzanne.obj"
+#define TEST "res/wrestlers.obj"
 #define EGYPT "res/egypt.obj"
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
 
-#define IN_MESH CUBE
+#define IN_MESH TEST
 #define OUT_MESH "res/out.obj"
 
 #define OCL_FILENAME "src/meshsmooth.ocl"
@@ -83,7 +84,14 @@ public:
 	}
 };
 
+class Inizializer{
+public:
 
+
+	Inizializer(const OBJ &obj){
+
+	}
+};
 
 
 
@@ -209,15 +217,24 @@ void readOBJFile(std::string path, uint &nels, float* &vertex4_array, uint &nadj
 		orderedVertex_arrayStruct[orderedIndex] = currVertex;
 	}
 	
+	#define ORDERED 0
 	
 	for(int i=0; i<nels; i++) {
 		vertex_struct * currVertex = orderedVertex_arrayStruct[i];
+		#if ORDERED
 		glm::vec3 vertex = obj.vertex_vector[currVertex->obj_vertex_vector_Index];
+		#else
+		glm::vec3 vertex = obj.vertex_vector[i];
+		#endif
 		vertex4_array[4*i] = vertex.x;
 		vertex4_array[4*i+1] = vertex.y;
 		vertex4_array[4*i+2] = vertex.z;
 
+		#if ORDERED
+		uint currentAdjsCount = currVertex->adjsCount;
+		#else
 		uint currentAdjsCount = obj_adjacents_arrayVector[i].size();
+		#endif
 		uint* adjIndexPtr = (uint*)(&vertex4_array[4*i+3]);
 		*adjIndexPtr = ((uint)currentAdjStartIndex)<<6;
 		*adjIndexPtr += (currentAdjsCount<<26)>>26;
@@ -230,11 +247,18 @@ void readOBJFile(std::string path, uint &nels, float* &vertex4_array, uint &nadj
 	
 	adjs_array = new uint[nadjs];
 	uint adjIndex = 0;
+	#if ORDERED
 	for(int i=0; i<nels; i++) {
 		vertex_struct * currVertex = orderedVertex_arrayStruct[i];
 		for( vertex_struct* adj : currVertex->adjs)
 			adjs_array[adjIndex++] = adj->currentIndex;
 	}
+	#else
+	for(int i=0; i<nels; i++) {
+		for( uint adjIndex : obj_adjacents_arrayVector[i])
+			adjs_array[adjIndex++] = adjIndex;
+	}
+	#endif
 	
 	printf(" > Data initialized!\n");
 	printf("============================\n");
@@ -394,6 +418,6 @@ int main(int argc, char *argv[])
 		
 	printf("============================\n");
 		
-	writeOBJFile(IN_MESH, OUT_MESH, result_vertex4_array);
+	//writeOBJFile(IN_MESH, OUT_MESH, result_vertex4_array);
 	return 0;
 }
