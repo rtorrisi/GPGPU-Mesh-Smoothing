@@ -1,4 +1,4 @@
-#define OCL_PLATFORM 0
+#define OCL_PLATFORM 1
 #define OCL_DEVICE 0
 
 #define TEST "res/suzanne.obj"
@@ -158,7 +158,7 @@ void readOBJFile(std::string path, uint &nels, float* &vertex4_array, uint &nadj
 	vertex4_array = new float[4*nels];
 	uint currentAdjStartIndex = 0;
 	
-	/*
+	
 	vertex_struct** orderedVertex_arrayStruct = new vertex_struct*[nels];
 	//insert ordered vertex
 	for(int i=nels-1; i>=0; i--){ //(int i=0; i<nels; i++) not stable algorithm
@@ -169,24 +169,28 @@ void readOBJFile(std::string path, uint &nels, float* &vertex4_array, uint &nadj
 		uint orderedIndex = --counting_array[ currentAdjsCount - minAdjsCount ];
 		//set to vertex in struct the new orderedIndex
 		currVertex->currentIndex = orderedIndex;
+
+		/*
 		//get original vertex position from obj_vertex_vector
 		glm::vec3 *vertexPos = &obj_vertex_vector[currVertex->obj_vertex_vector_Index];
+
 		//insert vertex in new ordered position
 		vertex4_array[4*orderedIndex] = vertexPos->x;
 		vertex4_array[4*orderedIndex+1] = vertexPos->y;
 		vertex4_array[4*orderedIndex+2] = vertexPos->z;
 		
 		uint* adjIndexPtr = (uint*)(&vertex4_array[4*orderedIndex+3]);
-		//*adjIndexPtr = ((uint)currentAdjStartIndex)<<6;
-		//*adjIndexPtr += (currentAdjsCount<<26)>>26;
-		//currentAdjStartIndex += currentAdjsCount;
+		*adjIndexPtr = ((uint)currentAdjStartIndex)<<6;
+		*adjIndexPtr += (currentAdjsCount<<26)>>26;
+		currentAdjStartIndex += currentAdjsCount;*/
 
-		//orderedVertex_arrayStruct[orderedIndex] = vertex_arrayStruct[i];
+		orderedVertex_arrayStruct[orderedIndex] = currVertex;
 	}
-	*/
+	
 	
 	for(int i=0; i<nels; i++) {
-		glm::vec3 *vertex = &obj_vertex_vector[i];
+		vertex_struct * currVertex = orderedVertex_arrayStruct[i];
+		glm::vec3 *vertex = &obj_vertex_vector[currVertex->obj_vertex_vector_Index];
 		vertex4_array[4*i] = vertex->x;
 		vertex4_array[4*i+1] = vertex->y;
 		vertex4_array[4*i+2] = vertex->z;
@@ -198,14 +202,16 @@ void readOBJFile(std::string path, uint &nels, float* &vertex4_array, uint &nadj
 		
 		currentAdjStartIndex += currentAdjsCount;
 	}
+
+	// Now, currentAdjStartIndex is the total adjacents number.
 	nadjs = currentAdjStartIndex;
 	
-	// Now, currentAdjStartIndex is the total adjacents number.
-	adjs_array = new uint[currentAdjStartIndex];
+	adjs_array = new uint[nadjs];
 	uint adjIndex = 0;
 	for(int i=0; i<nels; i++) {
-		for( uint vertexIndex : obj_adjacents_arrayVector[i])
-			adjs_array[adjIndex++] = vertexIndex;
+		vertex_struct * currVertex = orderedVertex_arrayStruct[i];
+		for( vertex_struct* adj : currVertex->adjs)
+			adjs_array[adjIndex++] = adj->currentIndex;
 	}
 	
 	printf(" > Data initialized!\n");
@@ -273,7 +279,7 @@ cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_ar
 int main(int argc, char *argv[])
 {
 	
-	uint iterations = 100;
+	uint iterations = 1;
 	float lambda = 0.5f;
 	float mi = 0.5f;
 	
