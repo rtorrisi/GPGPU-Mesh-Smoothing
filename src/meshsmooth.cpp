@@ -25,6 +25,68 @@
 typedef unsigned int uint;
 size_t preferred_wg_smooth;
 
+
+class OBJ{
+public:
+	std::vector< glm::vec3 > vertex_vector;
+	std::vector< uint > facesVertexIndex_vector;
+	OBJ(){}
+	OBJ(std::string path){
+		load(path);
+	}
+	void load(std::string path){
+		
+		clear();
+
+		printf(" > Loading %s...\n", path.c_str());
+		
+		FILE * file = fopen(path.c_str(), "r");
+		if( file == NULL ){
+			printf("Impossible to open the file !\n");
+			return;
+		}
+		while( 1 ){ // parsing
+			char lineHeader[128];
+			// read the first word of the line
+			int res = fscanf(file, "%s", lineHeader);
+			if (res == EOF) break; // EOF = End Of File. Quit the loop.
+			// else : parse lineHeader
+			if ( strcmp( lineHeader, "v" ) == 0 ){
+				glm::vec3 vertex;
+				fscanf(file, "%f %f %f\n", &vertex.x, &vertex.y, &vertex.z );
+				vertex_vector.push_back(vertex);
+			}
+			else if ( strcmp( lineHeader, "f" ) == 0 ){
+				uint faceVertexIndex[3], faceUvIndex[3], faceNormalIndex[3];
+				
+				char line[512];
+				fgets( line, 512, file);
+				
+				int	match = sscanf(line, "%d/%d/%d %d/%d/%d %d/%d/%d\n", &faceVertexIndex[0], &faceUvIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceUvIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceUvIndex[2], &faceNormalIndex[2]);
+				if(match < 9) match = sscanf(line,"%d//%d %d//%d %d//%d\n", &faceVertexIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceNormalIndex[2]);
+				if(match < 6) match = sscanf(line,"%d %d %d\n", &faceVertexIndex[0], &faceVertexIndex[1], &faceVertexIndex[2]);
+				if(match < 3){
+					printf("File can't be read by parser. Try exporting with other options\n");
+					exit(1);
+				}
+				facesVertexIndex_vector.push_back(faceVertexIndex[0]);
+				facesVertexIndex_vector.push_back(faceVertexIndex[1]);
+				facesVertexIndex_vector.push_back(faceVertexIndex[2]);
+			}
+		}
+		printf(" > %s loaded!\n", path.c_str());
+	}
+
+	void clear(){
+		vertex_vector.clear();
+		facesVertexIndex_vector.clear();
+	}
+};
+
+
+
+
+
 void orderedUniqueInsert(std::vector< uint >*vertexAdjacents, uint vertexID)
 {
 	std::vector< uint >::iterator it;
@@ -38,61 +100,21 @@ void readOBJFile(std::string path, uint &nels, float* &vertex4_array, uint &nadj
 {
 		
 	printf("===== LOAD & INIT DATA =====\n");
-	printf(" > Loading %s...\n", IN_MESH);
-	
-	std::vector< glm::vec3 > obj_vertex_vector;
-	std::vector< uint > obj_facesVertexIndex_vector;
-	
-	FILE * file = fopen(path.c_str(), "r");
-	if( file == NULL ){
-		printf("Impossible to open the file !\n");
-		return;
-	}
-	while( 1 ){ // parsing
-		char lineHeader[128];
-		// read the first word of the line
-		int res = fscanf(file, "%s", lineHeader);
-		if (res == EOF) break; // EOF = End Of File. Quit the loop.
-		// else : parse lineHeader
-		if ( strcmp( lineHeader, "v" ) == 0 ){
-			glm::vec3 vertex;
-			fscanf(file, "%f %f %f\n", &vertex.x, &vertex.y, &vertex.z );
-			obj_vertex_vector.push_back(vertex);
-		}
-		else if ( strcmp( lineHeader, "f" ) == 0 ){
-			uint faceVertexIndex[3], faceUvIndex[3], faceNormalIndex[3];
-			
-			char line[512];
-			fgets( line, 512, file);
-			
-			int	match = sscanf(line, "%d/%d/%d %d/%d/%d %d/%d/%d\n", &faceVertexIndex[0], &faceUvIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceUvIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceUvIndex[2], &faceNormalIndex[2]);
-			if(match < 9)
-				match = sscanf(line,"%d//%d %d//%d %d//%d\n", &faceVertexIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceNormalIndex[2]);
-			if(match < 6)
-				match = sscanf(line,"%d %d %d\n", &faceVertexIndex[0], &faceVertexIndex[1], &faceVertexIndex[2]);
-			if(match < 3){
-				printf("File can't be read by parser. Try exporting with other options\n");
-				exit(1);
-			}
-			obj_facesVertexIndex_vector.push_back(faceVertexIndex[0]);
-			obj_facesVertexIndex_vector.push_back(faceVertexIndex[1]);
-			obj_facesVertexIndex_vector.push_back(faceVertexIndex[2]);
-		}
-	}
-	
-	printf(" > %s loaded!\n", IN_MESH);
+
+	OBJ obj(path);
+
 	printf(" > Initializing data...\n");
 	
 	// Init number of vertex
-	nels = obj_vertex_vector.size();
+	nels = obj.vertex_vector.size();
 	
 	// Discover adjacents vertex for each vertex
 	std::vector< uint >* obj_adjacents_arrayVector = new std::vector< uint >[nels];
 
-	for(int i=0; i<obj_facesVertexIndex_vector.size(); i+=3){
-		uint vertexID1 = obj_facesVertexIndex_vector[i] - 1;
-		uint vertexID2 = obj_facesVertexIndex_vector[i+1] - 1;
-		uint vertexID3 = obj_facesVertexIndex_vector[i+2] - 1;
+	for(int i=0; i<obj.facesVertexIndex_vector.size(); i+=3){
+		uint vertexID1 = obj.facesVertexIndex_vector[i] - 1;
+		uint vertexID2 = obj.facesVertexIndex_vector[i+1] - 1;
+		uint vertexID3 = obj.facesVertexIndex_vector[i+2] - 1;
 
 		std::vector< uint >* adjacent1 = &obj_adjacents_arrayVector[vertexID1];
 		std::vector< uint >* adjacent2 = &obj_adjacents_arrayVector[vertexID2];
@@ -190,10 +212,10 @@ void readOBJFile(std::string path, uint &nels, float* &vertex4_array, uint &nadj
 	
 	for(int i=0; i<nels; i++) {
 		vertex_struct * currVertex = orderedVertex_arrayStruct[i];
-		glm::vec3 *vertex = &obj_vertex_vector[currVertex->obj_vertex_vector_Index];
-		vertex4_array[4*i] = vertex->x;
-		vertex4_array[4*i+1] = vertex->y;
-		vertex4_array[4*i+2] = vertex->z;
+		glm::vec3 vertex = obj.vertex_vector[currVertex->obj_vertex_vector_Index];
+		vertex4_array[4*i] = vertex.x;
+		vertex4_array[4*i+1] = vertex.y;
+		vertex4_array[4*i+2] = vertex.z;
 
 		uint currentAdjsCount = obj_adjacents_arrayVector[i].size();
 		uint* adjIndexPtr = (uint*)(&vertex4_array[4*i+3]);
@@ -290,6 +312,8 @@ int main(int argc, char *argv[])
 		mi = atof(argv[3]);
 	}
 	
+	//OBJ obj(IN_MESH);
+
 	uint nels, nadjs, minAdjsCount, maxAdjsCount;
 	float meanAdjsCount;
 	float* vertex4_array, *result_vertex4_array;
