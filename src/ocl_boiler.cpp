@@ -1,22 +1,5 @@
-/* A collection of functions wrapping the most common boilerplate
-   of OpenCL program. You can now reduce the boilerplate to:
-*/
+#include <ocl_boiler.h>
 
-/* Include the headers defining the OpenCL host API */
-#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
-#include <CL/cl.h>
-
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
-#include <string.h>
-
-#define BUFSIZE 4096
-
-/* Check an OpenCL error status, printing a message and exiting
- * in case of failure
- */
 void ocl_check(cl_int err, const char *msg, ...) {
 	if (err != CL_SUCCESS) {
 		char msg_buf[BUFSIZE + 1];
@@ -32,17 +15,10 @@ void ocl_check(cl_int err, const char *msg, ...) {
 
 // Return the ID of the platform specified in the OCL_PLATFORM
 // environment variable (or the first one if none specified)
-cl_platform_id select_platform() {
+cl_platform_id select_platform(cl_uint platformIndex) {
 	cl_uint nplats;
 	cl_int err;
 	cl_platform_id *plats;
-	
-	const char * const env = getenv("OCL_PLATFORM");
-	cl_uint nump = 0;
-	
-	if (env && env[0] != '\0')
-		nump = atoi(env);
-	nump = OCL_PLATFORM;
 	
 	err = clGetPlatformIDs(0, NULL, &nplats);
 	ocl_check(err, "counting platforms");
@@ -52,12 +28,12 @@ cl_platform_id select_platform() {
 	err = clGetPlatformIDs(nplats, plats, NULL);
 	ocl_check(err, "getting platform IDs");
 
-	if (nump >= nplats) {
-		fprintf(stderr, "no platform number %u", nump);
+	if (platformIndex >= nplats) {
+		fprintf(stderr, "no platform number %u", platformIndex);
 		exit(1);
 	}
 
-	cl_platform_id choice = plats[nump];
+	cl_platform_id choice = plats[platformIndex];
 
 	char buffer[BUFSIZE];
 
@@ -65,22 +41,18 @@ cl_platform_id select_platform() {
 		buffer, NULL);
 	ocl_check(err, "getting platform name");
 
-	printf(" %d Platforms: %d > %s\n", nplats, nump, buffer);
+	printf(" %d Platforms: %d > %s\n", nplats, platformIndex, buffer);
 
 	return choice;
 }
 
 // Return the ID of the device (of the given platform p) specified in the
 // OCL_DEVICE environment variable (or the first one if none specified)
-cl_device_id select_device(cl_platform_id p) {
+cl_device_id select_device(cl_platform_id p, cl_uint deviceIndex) {
 	cl_uint ndevs;
 	cl_int err;
 	cl_device_id *devs;
-	const char * const env = getenv("OCL_DEVICE");
-	cl_uint numd = 0;
-	if (env && env[0] != '\0')
-		numd = atoi(env);
-	numd = OCL_DEVICE;
+
 	err = clGetDeviceIDs(p, CL_DEVICE_TYPE_ALL, 0, NULL, &ndevs);
 	ocl_check(err, "counting devices");
 
@@ -89,12 +61,12 @@ cl_device_id select_device(cl_platform_id p) {
 	err = clGetDeviceIDs(p, CL_DEVICE_TYPE_ALL, ndevs, devs, NULL);
 	ocl_check(err, "devices #2");
 
-	if (numd >= ndevs) {
-		fprintf(stderr, "no device number %u", numd);
+	if (deviceIndex >= ndevs) {
+		fprintf(stderr, "no device number %u", deviceIndex);
 		exit(1);
 	}
 
-	cl_device_id choice = devs[numd];
+	cl_device_id choice = devs[deviceIndex];
 
 	char buffer[BUFSIZE];
 
@@ -102,7 +74,7 @@ cl_device_id select_device(cl_platform_id p) {
 		buffer, NULL);
 	ocl_check(err, "device name");
 
-	printf(" %d Devices: %d > %s\n", ndevs, numd, buffer);
+	printf(" %d Devices: %d > %s\n", ndevs, deviceIndex, buffer);
 
 	return choice;
 }
