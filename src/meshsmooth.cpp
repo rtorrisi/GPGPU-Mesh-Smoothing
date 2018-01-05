@@ -1,13 +1,16 @@
-#define OCL_PLATFORM 1
+#define OCL_PLATFORM 0
 #define OCL_DEVICE 0
 
-//#define TEST "res/suzanne.obj"
-#define TEST "res/wrestlers.obj"
+#define WRESTLERS "res/wrestlers.obj"
+#define SUZANNE "res/suzanne.obj"
 #define EGYPT "res/egypt.obj"
+#define DRAGON "res/dragon.obj"
+#define HUMAN "res/human.obj"
+#define TEST "res/test.obj"
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
 
-#define IN_MESH TEST
+#define IN_MESH CUBE
 #define OUT_MESH "res/out.obj"
 
 #define OCL_FILENAME "src/meshsmooth.ocl"
@@ -26,26 +29,46 @@
 typedef unsigned int uint;
 size_t preferred_wg_smooth;
 
-
-class OBJ{
-public:
+class OBJ {
+	private:
+	
+	bool validData;
+	uint verticesCount;
+	uint facesCount;
+	
+	init() {
+		validData = false;
+		verticesCount = facesCount = 0;
+	}
+	bool OBJException(std::string strerror) {
+		printf("Error: %s!\n", strerror);
+		validData = false;
+		return false;
+	}
+	
+	
+	public:
+	
 	std::vector< glm::vec3 > vertex_vector;
 	std::vector< uint > facesVertexIndex_vector;
-	OBJ(){}
+	
 	OBJ(std::string path){
+		init();
 		load(path);
 	}
-	void load(std::string path){
+	void clear(){
+		init();
+		vertex_vector.clear();
+		facesVertexIndex_vector.clear();
+	}
+	bool load(std::string path){
 		
 		clear();
 
 		printf(" > Loading %s...\n", path.c_str());
 		
 		FILE * file = fopen(path.c_str(), "r");
-		if( file == NULL ){
-			printf("Impossible to open the file !\n");
-			return;
-		}
+		if( file == NULL ) OBJException("fopen() -> Impossible to open the file");
 		while( 1 ){ // parsing
 			char lineHeader[128];
 			// read the first word of the line
@@ -56,6 +79,7 @@ public:
 				glm::vec3 vertex;
 				fscanf(file, "%f %f %f\n", &vertex.x, &vertex.y, &vertex.z );
 				vertex_vector.push_back(vertex);
+				verticesCount++;
 			}
 			else if ( strcmp( lineHeader, "f" ) == 0 ){
 				uint faceVertexIndex[3], faceUvIndex[3], faceNormalIndex[3];
@@ -66,37 +90,37 @@ public:
 				int	match = sscanf(line, "%d/%d/%d %d/%d/%d %d/%d/%d\n", &faceVertexIndex[0], &faceUvIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceUvIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceUvIndex[2], &faceNormalIndex[2]);
 				if(match < 9) match = sscanf(line,"%d//%d %d//%d %d//%d\n", &faceVertexIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceNormalIndex[2]);
 				if(match < 6) match = sscanf(line,"%d %d %d\n", &faceVertexIndex[0], &faceVertexIndex[1], &faceVertexIndex[2]);
-				if(match < 3){
-					printf("File can't be read by parser. Try exporting with other options\n");
-					exit(1);
-				}
+				if(match < 3) OBJException("parser -> Try exporting with other options");
 				facesVertexIndex_vector.push_back(faceVertexIndex[0]);
 				facesVertexIndex_vector.push_back(faceVertexIndex[1]);
 				facesVertexIndex_vector.push_back(faceVertexIndex[2]);
+				facesCount++;
 			}
 		}
 		printf(" > %s loaded!\n", path.c_str());
+		validData = true;
+		return true;
 	}
-
-	void clear(){
-		vertex_vector.clear();
-		facesVertexIndex_vector.clear();
-	}
+	bool hasValidData() const { return validData; }
+	uint getVerticesCount() const { return verticesCount; }
+	uint getFacesCount() const { return facesCount; }
 };
 
-class Inizializer{
-public:
-
-
-	Inizializer(const OBJ &obj){
-
+/*class Smoothing {
+	private:
+		uint nels, nadjs, minAdjsCount, maxAdjsCount;
+		float meanAdjsCount;
+		
+	public:
+	Smoothing(const OBJ &obj){
+		if(!obj.hasValidData()) {
+			printf("Smoothing(OBJ) -> obj has invalid data");
+			return;
+		}
 	}
-};
+};*/
 
-
-
-void orderedUniqueInsert(std::vector< uint >*vertexAdjacents, uint vertexID)
-{
+void orderedUniqueInsert(std::vector< uint >*vertexAdjacents, uint vertexID) {
 	std::vector< uint >::iterator it;
 	for(it = vertexAdjacents->begin(); it != vertexAdjacents->end() && *it < vertexID; it++) {}
 	if(it == vertexAdjacents->end() || *it != vertexID){
@@ -104,17 +128,17 @@ void orderedUniqueInsert(std::vector< uint >*vertexAdjacents, uint vertexID)
 	}
 }
 
-void readOBJFile(std::string path, uint &nels, float* &vertex4_array, uint &nadjs, uint* &adjs_array, uint &minAdjsCount, uint &maxAdjsCount)
-{
+void readOBJFile(std::string path, uint &nels, float* &vertex4_array, uint &nadjs, uint* &adjs_array, uint &minAdjsCount, uint &maxAdjsCount) {
 		
 	printf("===== LOAD & INIT DATA =====\n");
 
 	OBJ obj(path);
+	if(!obj.hasValidData()) exit(1);
 
 	printf(" > Initializing data...\n");
 	
 	// Init number of vertex
-	nels = obj.vertex_vector.size();
+	nels = obj.getVerticesCount();
 	
 	// Discover adjacents vertex for each vertex
 	std::vector< uint >* obj_adjacents_arrayVector = new std::vector< uint >[nels];
@@ -128,7 +152,8 @@ void readOBJFile(std::string path, uint &nels, float* &vertex4_array, uint &nadj
 		std::vector< uint >* adjacent2 = &obj_adjacents_arrayVector[vertexID2];
 		std::vector< uint >* adjacent3 = &obj_adjacents_arrayVector[vertexID3];
 		
-		#if 1
+		#define INDEX_ORDERED 1
+		#if INDEX_ORDERED
 		orderedUniqueInsert(adjacent1, vertexID2);
 		orderedUniqueInsert(adjacent1, vertexID3);
 		orderedUniqueInsert(adjacent2, vertexID1);
@@ -217,7 +242,7 @@ void readOBJFile(std::string path, uint &nels, float* &vertex4_array, uint &nadj
 		orderedVertex_arrayStruct[orderedIndex] = currVertex;
 	}
 	
-	#define ORDERED 0
+	#define ORDERED 1
 	
 	for(int i=0; i<nels; i++) {
 		vertex_struct * currVertex = orderedVertex_arrayStruct[i];
@@ -264,8 +289,7 @@ void readOBJFile(std::string path, uint &nels, float* &vertex4_array, uint &nadj
 	printf("============================\n");
 }
 
-void writeOBJFile(std::string path, std::string out_path, float *result_vertex4_array)
-{
+void writeOBJFile(std::string path, std::string out_path, float *result_vertex4_array) {
 	printf("========= SAVE OBJ =========\n");
 	printf(" > Saving result to %s...\n", OUT_MESH);
 	char line[512];
@@ -294,8 +318,7 @@ void writeOBJFile(std::string path, std::string out_path, float *result_vertex4_
 	printf("============================\n");
 }
 
-cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList)
-{
+cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
 	size_t gws[] = { round_mul_up(nels, preferred_wg_smooth) };
 	cl_event smooth_evt;
 	cl_int err;
@@ -322,21 +345,11 @@ cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_ar
 	return smooth_evt;
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
 	
-	uint iterations = 1;
-	float lambda = 0.5f;
-	float mi = 0.5f;
-	
-	if(argc >= 2) {
-		iterations = atoi(argv[1]);
-	} if(argc == 4) {
-		lambda = atof(argv[2]);
-		mi = atof(argv[3]);
-	}
-	
-	//OBJ obj(IN_MESH);
+	uint iterations = (argc>=2) ? atoi(argv[1]) : 1 ;
+	float lambda = (argc>=4) ? atoi(argv[2]) : 0.5f;
+	float mi = (argc>=4) ? atoi(argv[3]) : -0.5f;
 
 	uint nels, nadjs, minAdjsCount, maxAdjsCount;
 	float meanAdjsCount;
@@ -363,7 +376,6 @@ int main(int argc, char *argv[])
 	std::cout << " Lambda factor: " << lambda << std::endl;
 	std::cout << " Mi factor: " << mi << std::endl;
 	printf("============================\n");
-	
 	printf("========= OBJ INFO =========\n");
 	std::cout << " Input .obj path: " << IN_MESH << std::endl;
 	std::cout << " Output .obj path: " << OUT_MESH << std::endl;
@@ -389,7 +401,7 @@ int main(int argc, char *argv[])
 	
 	printf("====== KERNEL LAUNCH =======\n");
 	cl_event smooth_evt, smooth_evt2;
-	printf("start / ");
+	printf("start\n");
 	
 	for(int iter=0; iter<iterations; iter++) {
 		smooth_evt = smooth(queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
