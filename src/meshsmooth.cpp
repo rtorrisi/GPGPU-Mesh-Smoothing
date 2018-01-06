@@ -196,6 +196,8 @@ class Smoothing {
 		size_t memsize, ajdsmemsize;
 		float* vertex4_array;
 		uint* adjs_array;
+
+		uint countingSize;
 		uint* adjCounter;
 
 
@@ -275,7 +277,7 @@ class Smoothing {
 			vertex_arrayStruct[i] = v;
 		}
 		
-		uint countingSize = maxAdjsCount-minAdjsCount+1;
+		countingSize = maxAdjsCount-minAdjsCount+1;
 		uint counting_array[countingSize] = {0};
 		
 		for(int i=0; i<nels; i++){
@@ -299,31 +301,42 @@ class Smoothing {
 		}
 		std::cout << std::endl;
 		*/
-		adjCounter = new uint[maxAdjsCount];
-		for(int i=0; i<countingSize; i++) adjCounter[i+minAdjsCount-1] = counting_array[maxAdjsCount-minAdjsCount-i];
-		//for(int i=0; i<countingSize; i++) std::cout<<i+minAdjsCount<<"  ";
-		for(int i=0; i<minAdjsCount-1; i++) adjCounter[i] = adjCounter[minAdjsCount-1];
-		//for(int i=0; i<maxAdjsCount; i++) std::cout<<adjCounter[i]<<"  ";
-		std::cout<<std::endl;
 
 		vertex4_array = new float[4*nels];
-		uint currentAdjStartIndex = 0;
-		
 		
 		vertex_struct** orderedVertex_arrayStruct = new vertex_struct*[nels];
 		//insert ordered vertex
-		for(int i=nels-1; i>=0; i--){ //(int i=0; i<nels; i++) not stable algorithm
+		for(int i=0; i<nels; i++) {
 			vertex_struct * currVertex = vertex_arrayStruct[i];
 			uint currentAdjsCount = currVertex->adjsCount;
 			
 			//calc new orderedIndex from counting_array
 			uint orderedIndex = --counting_array[ currentAdjsCount - minAdjsCount ];
 			//set to vertex in struct the new orderedIndex
-			currVertex->currentIndex = orderedIndex;
 
-			orderedVertex_arrayStruct[orderedIndex] = currVertex;
+			currVertex->currentIndex = nels-1-orderedIndex;
+
+			orderedVertex_arrayStruct[nels-1 - orderedIndex] = currVertex;
 		}
 		
+
+		adjCounter = new uint[maxAdjsCount];
+		for(int i=0; i<maxAdjsCount; i++) adjCounter[i] = 0;
+		for(int i=0; i<maxAdjsCount; i++){
+			for(int j=0; j<nels; j++){
+				vertex_struct * currVertex = vertex_arrayStruct[j];
+				if(currVertex->adjsCount>=i+1) adjCounter[i]++;
+			}
+		}
+		/*
+		for(int i=0; i<countingSize; i++) adjCounter[i+minAdjsCount-1] = counting_array[maxAdjsCount-minAdjsCount-i];
+		//for(int i=0; i<countingSize; i++) std::cout<<i+minAdjsCount<<"  ";
+		for(int i=0; i<minAdjsCount-1; i++) adjCounter[i] = adjCounter[minAdjsCount-1];*/
+		for(int i=0; i<maxAdjsCount; i++) std::cout<<adjCounter[i]<<"  ";
+		std::cout<<std::endl;
+
+
+		uint currentAdjStartIndex = 0;
 		#define ORDERED 1
 		
 		for(int i=0; i<nels; i++) {
@@ -354,12 +367,46 @@ class Smoothing {
 		
 		adjs_array = new uint[nadjs];
 		uint adjIndex = 0;
+		
 		#if ORDERED
+
+
+		/*
 		for(int i=0; i<nels; i++) {
 			vertex_struct * currVertex = orderedVertex_arrayStruct[i];
 			for( vertex_struct* adj : currVertex->adjs)
 				adjs_array[adjIndex++] = adj->currentIndex;
 		}
+		*/
+
+		for(int i=0; i<maxAdjsCount; i++){
+			for(int j=0; j<nels; j++){
+				vertex_struct * currVertex = orderedVertex_arrayStruct[j];
+				if( currVertex->adjsCount >= i+1 )
+					adjs_array[adjIndex++] = currVertex->adjs[i]->currentIndex;
+			}
+		}
+		printf("nadjs: %d vs adjIndex: %d\n", nadjs, adjIndex);
+
+		//DEBUG PRINT
+		/*
+		for(int i=0; i<nels; i++) {
+			printf("vertex %d ->", i);
+			vertex_struct * currVertex = orderedVertex_arrayStruct[i];
+			for( vertex_struct* adj : currVertex->adjs )
+				printf( " %d",adj->currentIndex );
+			printf("\n");
+		}
+		/*
+		for(int i=0; i<nadjs; i++) {
+			printf("%d\n", adjs_array[i]);
+		}
+		*/
+		//DEBUG END
+			
+		
+
+
 		#else
 		for(int i=0; i<nels; i++) {
 			for( uint adjIndex : obj_adjacents_arrayVector[i])
@@ -398,10 +445,12 @@ class Smoothing {
 		// Create Buffers
 		cl_mem cl_vertex4_array = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertex4_array, &err);
 		cl_mem cl_adjs_array = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, ajdsmemsize, adjs_array, &err);
-		cl_mem cl_result_vertex4_array = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE, memsize, NULL, &err); // ANGEL
+		cl_mem cl_result_vertex4_array = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE, memsize, NULL, &err);
+		cl_mem cl_adjsCounter = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, maxAdjsCount*sizeof(uint), adjCounter, &err);
 
 		// Extract kernels
-		cl_kernel smooth_k = clCreateKernel(OCLenv->program, "smooth", &err);
+		//cl_kernel smooth_k = clCreateKernel(OCLenv->program, "smooth", &err);
+		cl_kernel smooth_k = clCreateKernel(OCLenv->program, "smooth_coalescence", &err);
 		ocl_check(err, "create kernel smooth");
 
 		// Set preferred_wg size from device info
@@ -411,12 +460,21 @@ class Smoothing {
 		printf("====== KERNEL LAUNCH =======\n");
 		cl_event smooth_evt, smooth_evt2;
 		printf("start\n");
-		
+		/*
 		for(int iter=0; iter<iterations; iter++) {
-			smooth_evt = smooth(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
-			smooth_evt2 = smooth(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_vertex4_array, nels, mi, 1, &smooth_evt);
+			smooth_evt = smooth(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
+			smooth_evt2 = smooth(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_vertex4_array, nels, mi, 1, &smooth_evt);
 		}
-		
+		*/
+
+		smooth_evt = smooth_coalescence(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, 0, NULL);
+		//smooth_evt = smooth(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, 0, NULL);
+		/*
+		for(int iter=0; iter<iterations; iter++) {
+			smooth_evt = smooth_coalescence(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
+			smooth_evt2 = smooth_coalescence(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_vertex4_array, nels, mi, 1, &smooth_evt);
+		}
+		*/
 		// Copy result
 		result_vertex4_array = new float[4*nels];
 		if (!result_vertex4_array) printf("error res\n");
@@ -424,7 +482,7 @@ class Smoothing {
 		cl_event copy_evt;
 		err = clEnqueueReadBuffer(OCLenv->queue, cl_vertex4_array, CL_TRUE,
 			0, memsize, result_vertex4_array,
-			1, &smooth_evt2, &copy_evt);
+			1, &smooth_evt/*smooth_evt2*/, &copy_evt);
 		ocl_check(err, "read buffer vertex4_array");
 		
 		printf("stop\n");
@@ -466,6 +524,35 @@ class Smoothing {
 		ocl_check(err, "enqueue kernel smooth");
 		return smooth_evt;
 	}
+
+	cl_event smooth_coalescence(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_adjsCounter, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
+		size_t gws[] = { round_mul_up(nels, preferred_wg_smooth) };
+		cl_event smooth_evt;
+		cl_int err;
+
+		//printf("smooth gws: %d | %zu => %zu\n", nels, preferred_wg_smooth, gws[0]);
+
+		// Setting arguments
+		err = clSetKernelArg(smooth_k, 0, sizeof(cl_vertex4_array), &cl_vertex4_array);
+		ocl_check(err, "set smooth arg 0");
+		err = clSetKernelArg(smooth_k, 1, sizeof(cl_adjs_array), &cl_adjs_array);
+		ocl_check(err, "set smooth arg 1");
+		err = clSetKernelArg(smooth_k, 2, sizeof(cl_adjsCounter), &cl_adjsCounter);
+		ocl_check(err, "set smooth arg 2");
+		err = clSetKernelArg(smooth_k, 3, sizeof(cl_result_vertex4_array), &cl_result_vertex4_array);
+		ocl_check(err, "set smooth arg 3");
+		err = clSetKernelArg(smooth_k, 4, sizeof(nels), &nels);
+		ocl_check(err, "set smooth arg 4");
+		err = clSetKernelArg(smooth_k, 5, sizeof(factor), &factor);
+		ocl_check(err, "set smooth arg 5");
+
+		err = clEnqueueNDRangeKernel(queue, smooth_k,
+			1, NULL, gws, NULL, /* griglia di lancio */
+			waintingSize, waintingSize==0?NULL:waitingList, /* waiting list */
+			&smooth_evt);
+		ocl_check(err, "enqueue kernel smooth");
+		return smooth_evt;
+	}	
 };
 
 

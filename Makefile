@@ -21,6 +21,6 @@ execute:$(PROG).exe
 	$(PROG).exe 
 
 clean:
-	del $(SRC)/*.o *.exe
+	del $(SRC)\*.o *.exe
 
 .PHONY: clean execute

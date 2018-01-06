@@ -23,7 +23,7 @@ kernel void smooth(
 	{
 		float4 adj = vertex4_array[adjs_array[adjsIndexOffset+adjIndex]];
 		umbrellaOperator += ( adj-vertex );
-		//printf("Adj %d of %d -> %f / %f / %f\n", adjIndex, i, adj.x, adj.y, adj.z);
+		//printf("Adj %d of vertex %d -> %f / %f / %f\n", adjIndex, i, adj.x, adj.y, adj.z);
 	}
 	umbrellaOperator /= adjsCount;
 	float4 res = vertex + factor*umbrellaOperator;
@@ -35,6 +35,7 @@ kernel void smooth(
 kernel void smooth_coalescence(
 	global float4 * restrict vertex4_array,
 	global unsigned int * restrict adjs_array,
+	global unsigned int * restrict adjsCounter,
 	global float4 * restrict result_vertex4_array,
 	unsigned int nels, float factor)
 {	
@@ -45,18 +46,21 @@ kernel void smooth_coalescence(
 	float lastComponent = vertex.w;
 	
 	unsigned int adjsInfo = *(unsigned int *)&lastComponent;
-	unsigned int adjsIndexOffset = adjsInfo>>COUNT_BITS;
 	unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
-	//printf("vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, vertex.x, vertex.y, vertex.z, adjsIndexOffset, adjsCount);
-	
+	//printf("vertex %d -> %f / %f / %f   #adj -> %d \n", i, vertex.x, vertex.y, vertex.z, adjsCount);
+
+	float4 current_adj;
 	float4 umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
+	int offset = 0;
 	for(int adjIndex=0; adjIndex<adjsCount; adjIndex++)
 	{
-		float4 adj = vertex4_array[adjs_array[adjsIndexOffset+adjIndex]];
-		umbrellaOperator += ( adj-vertex );
-		//printf("Adj %d of %d -> %f / %f / %f\n", adjIndex, i, adj.x, adj.y, adj.z);
+		current_adj = vertex4_array[adjs_array[i+offset]];
+		umbrellaOperator += current_adj-vertex;
+		offset += adjsCounter[adjIndex];
+		//printf("Adj %d of vertex %d -> %f / %f / %f\n", adjIndex, i, adj.x, adj.y, adj.z);
+		//printf("Adj %d of vertex %d -> %d\n", adjIndex, i, adjs_array[i+offset]);
 	}
-	umbrellaOperator /= adjsCount;
+	umbrellaOperator /= adjsCount; //controllare che non sia un vertice isolato
 	float4 res = vertex + factor*umbrellaOperator;
 	res.w = lastComponent;
 	result_vertex4_array[i] = res;
