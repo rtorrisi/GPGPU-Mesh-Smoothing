@@ -1,4 +1,4 @@
-#define OCL_PLATFORM 0
+#define OCL_PLATFORM 1
 #define OCL_DEVICE 0
 
 #define WRESTLERS "res/wrestlers.obj"
@@ -10,7 +10,7 @@
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
 
-#define IN_MESH CUBE
+#define IN_MESH SUZANNE
 #define OUT_MESH "res/out.obj"
 
 #define OCL_FILENAME "src/meshsmooth.ocl"
@@ -196,6 +196,7 @@ class Smoothing {
 		size_t memsize, ajdsmemsize;
 		float* vertex4_array;
 		uint* adjs_array;
+		uint* adjCounter;
 
 
 	Smoothing(const OpenCLEnvironment* OCLenv, const OBJ* obj){
@@ -283,11 +284,28 @@ class Smoothing {
 			
 			for(uint index : obj_adjacents_arrayVector[i])
 				vertex_arrayStruct[i]->adjs.push_back(vertex_arrayStruct[index]);
+		}/*
+		for(int i=0; i<countingSize; i++){
+			std::cout << counting_array[i] << "  ";
 		}
-		
+		std::cout << std::endl;
+		*/
+
 		//counting sort sums
 		for(int i=1; i<countingSize; i++) counting_array[i] += counting_array[i-1];
-		
+		/*
+		for(int i=0; i<countingSize; i++){
+			std::cout << counting_array[i] << "  ";
+		}
+		std::cout << std::endl;
+		*/
+		adjCounter = new uint[maxAdjsCount];
+		for(int i=0; i<countingSize; i++) adjCounter[i+minAdjsCount-1] = counting_array[maxAdjsCount-minAdjsCount-i];
+		//for(int i=0; i<countingSize; i++) std::cout<<i+minAdjsCount<<"  ";
+		for(int i=0; i<minAdjsCount-1; i++) adjCounter[i] = adjCounter[minAdjsCount-1];
+		//for(int i=0; i<maxAdjsCount; i++) std::cout<<adjCounter[i]<<"  ";
+		std::cout<<std::endl;
+
 		vertex4_array = new float[4*nels];
 		uint currentAdjStartIndex = 0;
 		
