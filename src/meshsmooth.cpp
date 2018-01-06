@@ -38,33 +38,6 @@ void orderedUniqueInsert(std::vector< uint >*vertexAdjacents, uint vertexID) {
 	}
 }
 
-cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
-	size_t gws[] = { round_mul_up(nels, preferred_wg_smooth) };
-	cl_event smooth_evt;
-	cl_int err;
-
-	//printf("smooth gws: %d | %zu => %zu\n", nels, preferred_wg_smooth, gws[0]);
-
-	// Setting arguments
-	err = clSetKernelArg(smooth_k, 0, sizeof(cl_vertex4_array), &cl_vertex4_array);
-	ocl_check(err, "set smooth arg 0");
-	err = clSetKernelArg(smooth_k, 1, sizeof(cl_adjs_array), &cl_adjs_array);
-	ocl_check(err, "set smooth arg 1");
-	err = clSetKernelArg(smooth_k, 2, sizeof(cl_result_vertex4_array), &cl_result_vertex4_array);
-	ocl_check(err, "set smooth arg 2");
-	err = clSetKernelArg(smooth_k, 3, sizeof(nels), &nels);
-	ocl_check(err, "set smooth arg 3");
-	err = clSetKernelArg(smooth_k, 4, sizeof(factor), &factor);
-	ocl_check(err, "set smooth arg 4");
-
-	err = clEnqueueNDRangeKernel(queue, smooth_k,
-		1, NULL, gws, NULL, /* griglia di lancio */
-		waintingSize, waintingSize==0?NULL:waitingList, /* waiting list */
-		&smooth_evt);
-	ocl_check(err, "enqueue kernel smooth");
-	return smooth_evt;
-}
-
 class OpenCLEnvironment{
 public:
 
@@ -105,8 +78,14 @@ class OBJ {
 	public:
 	
 	std::vector< glm::vec3 > vertex_vector;
+	std::vector< glm::vec3 > normal_vector;
+	std::vector< glm::vec2 > uv_vector;
 	std::vector< uint > facesVertexIndex_vector;
-	
+	std::vector< uint > facesNormalIndex_vector;
+	std::vector< uint > facesUVIndex_vector;
+
+	OBJ(){}
+
 	OBJ(std::string path){
 		init();
 		load(path);
@@ -124,7 +103,7 @@ class OBJ {
 		printf(" > Loading %s...\n", path.c_str());
 		
 		FILE * file = fopen(path.c_str(), "r");
-		if( file == NULL ) OBJException("fopen() -> Impossible to open the file");
+		if( file == NULL ) return OBJException("fopen() -> Impossible to open the file");
 		while( 1 ){ // parsing
 			char lineHeader[128];
 			// read the first word of the line
@@ -136,6 +115,16 @@ class OBJ {
 				fscanf(file, "%f %f %f\n", &vertex.x, &vertex.y, &vertex.z );
 				vertex_vector.push_back(vertex);
 				verticesCount++;
+			} 
+			else if ( strcmp( lineHeader, "vn" ) == 0 ){
+				glm::vec3 normal;
+				fscanf(file, "%f %f %f\n", &normal.x, &normal.y, &normal.z );
+				normal_vector.push_back(normal);
+			}
+			else if ( strcmp( lineHeader, "vt" ) == 0 ){
+				glm::vec2 uv;
+				fscanf(file, "%f %f\n", &uv.x, &uv.y);
+				uv_vector.push_back(uv);
 			}
 			else if ( strcmp( lineHeader, "f" ) == 0 ){
 				uint faceVertexIndex[3], faceUvIndex[3], faceNormalIndex[3];
@@ -150,6 +139,12 @@ class OBJ {
 				facesVertexIndex_vector.push_back(faceVertexIndex[0]);
 				facesVertexIndex_vector.push_back(faceVertexIndex[1]);
 				facesVertexIndex_vector.push_back(faceVertexIndex[2]);
+				facesNormalIndex_vector.push_back(faceNormalIndex[0]);
+				facesNormalIndex_vector.push_back(faceNormalIndex[1]);
+				facesNormalIndex_vector.push_back(faceNormalIndex[2]);
+				facesUVIndex_vector.push_back(faceUvIndex[0]);
+				facesUVIndex_vector.push_back(faceUvIndex[1]);
+				facesUVIndex_vector.push_back(faceUvIndex[2]);
 				facesCount++;
 			}
 		}
@@ -158,6 +153,32 @@ class OBJ {
 		validData = true;
 		return true;
 	}
+
+/*
+	bool write(std::string out_path) {
+		printf("========= SAVE OBJ =========\n");
+		printf(" > Saving result to %s...\n", out_path.c_str());
+		char line[512];
+
+		FILE * out_file = fopen(out_path.c_str(), "w");
+		if( file == NULL ) return false;
+
+		for(int i=0; i<vertex_vector.size(); i++){
+			fprintf(out_file, "v %f %f %f\n", vertex_vector[i].x, vertex_vector[i].y, vertex_vector[i].z);
+		}
+		
+		int i=0;
+		while (fgets(line, sizeof line, in_file) != NULL) {
+			if ( line[0] == 'v' && line[1] == ' ') {
+				fprintf(out_file, "v %f %f %f\n", result_vertex4_array[4*i], result_vertex4_array[4*i+1], result_vertex4_array[4*i+2]);
+				i++;
+			}
+			else fprintf(out_file, "%s", line);
+		}
+		printf(" > Result saved to %s!\n", OUT_MESH);
+		printf("============================\n");
+	}
+*/
 	bool hasValidData() const { return validData; }
 	uint getVerticesCount() const { return verticesCount; }
 	uint getFacesCount() const { return facesCount; }
@@ -400,6 +421,33 @@ class Smoothing {
 			
 		printf("============================\n");
 	}
+
+	cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
+		size_t gws[] = { round_mul_up(nels, preferred_wg_smooth) };
+		cl_event smooth_evt;
+		cl_int err;
+
+		//printf("smooth gws: %d | %zu => %zu\n", nels, preferred_wg_smooth, gws[0]);
+
+		// Setting arguments
+		err = clSetKernelArg(smooth_k, 0, sizeof(cl_vertex4_array), &cl_vertex4_array);
+		ocl_check(err, "set smooth arg 0");
+		err = clSetKernelArg(smooth_k, 1, sizeof(cl_adjs_array), &cl_adjs_array);
+		ocl_check(err, "set smooth arg 1");
+		err = clSetKernelArg(smooth_k, 2, sizeof(cl_result_vertex4_array), &cl_result_vertex4_array);
+		ocl_check(err, "set smooth arg 2");
+		err = clSetKernelArg(smooth_k, 3, sizeof(nels), &nels);
+		ocl_check(err, "set smooth arg 3");
+		err = clSetKernelArg(smooth_k, 4, sizeof(factor), &factor);
+		ocl_check(err, "set smooth arg 4");
+
+		err = clEnqueueNDRangeKernel(queue, smooth_k,
+			1, NULL, gws, NULL, /* griglia di lancio */
+			waintingSize, waintingSize==0?NULL:waitingList, /* waiting list */
+			&smooth_evt);
+		ocl_check(err, "enqueue kernel smooth");
+		return smooth_evt;
+	}
 };
 
 
@@ -423,52 +471,4 @@ int main(int argc, char *argv[]) {
 		
 	//writeOBJFile(IN_MESH, OUT_MESH, result_vertex4_array);
 	return 0;
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-void writeOBJFile(std::string path, std::string out_path, float *result_vertex4_array) {
-	printf("========= SAVE OBJ =========\n");
-	printf(" > Saving result to %s...\n", OUT_MESH);
-	char line[512];
-
-	FILE * in_file = fopen(path.c_str(), "r");
-	FILE * out_file = fopen(out_path.c_str(), "w");
-	
-	if(in_file == NULL){
-		printf("Impossible to open the file !\n");
-		return;
-	}
-	if(result_vertex4_array == NULL) {
-		printf("Result input error !\n");
-		return;
-	}
-	
-	int i=0;
-	while (fgets(line, sizeof line, in_file) != NULL) {
-		if ( line[0] == 'v' && line[1] == ' ') {
-			fprintf(out_file, "v %f %f %f\n", result_vertex4_array[4*i], result_vertex4_array[4*i+1], result_vertex4_array[4*i+2]);
-			i++;
-		}
-		else fprintf(out_file, "%s", line);
-	}
-	printf(" > Result saved to %s!\n", OUT_MESH);
-	printf("============================\n");
 }
