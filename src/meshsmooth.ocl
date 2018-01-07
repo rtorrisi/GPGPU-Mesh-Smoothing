@@ -44,9 +44,7 @@ kernel void smooth_coalescence(
 	
 	float4 vertex = vertex4_array[i];
 	float lastComponent = vertex.w;
-	
-	unsigned int adjsInfo = *(unsigned int *)&lastComponent;
-	unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
+	unsigned int adjsCount = *(unsigned int *)&lastComponent;
 	//printf("vertex %d -> %f / %f / %f   #adj -> %d \n", i, vertex.x, vertex.y, vertex.z, adjsCount);
 
 	float4 current_adj;

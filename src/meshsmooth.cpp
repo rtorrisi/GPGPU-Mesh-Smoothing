@@ -30,10 +30,14 @@
 typedef unsigned int uint;
 size_t preferred_wg_smooth;
 
-void orderedUniqueInsert(std::vector< uint >*vertexAdjacents, uint vertexID) {
+bool orderedUniqueInsert(std::vector< uint >*vertexAdjacents, uint vertexID) {
 	std::vector< uint >::iterator it;
 	for(it = vertexAdjacents->begin(); it != vertexAdjacents->end() && *it < vertexID; it++) {}
-	if(it == vertexAdjacents->end() || *it != vertexID) vertexAdjacents->insert(it, vertexID);
+	if(it == vertexAdjacents->end() || *it != vertexID) {
+		vertexAdjacents->insert(it, vertexID);
+		return true;
+	}
+	return false;
 }
 
 class OpenCLEnvironment {
@@ -203,7 +207,24 @@ private:
 
 	const OpenCLEnvironment* OCLenv;
 	OBJ* obj;
+
+//TO-DO
+	struct vertex_struct{
+		uint currentIndex;
+		uint obj_vertex_vector_Index;
+		uint adjsCount;
+		std::vector<vertex_struct*> adjs;
+	};
+		
+	struct face_struct{
+		vertex_struct * faceVertices_struct_array[3];
+	};
+
+	struct vertex_struct_comparator {
+		bool operator() (vertex_struct* i,vertex_struct* j) { return (i->currentIndex < j->currentIndex);}
+	} vertex_struct_cmp;
 	
+//
 public:
 	size_t memsize, ajdsmemsize;
 	float* vertex4_array;
@@ -232,26 +253,151 @@ public:
 			std::vector< uint >* adjacent3 = &obj_adjacents_arrayVector[vertexID3];
 			
 			if(orderedInsert){
-				orderedUniqueInsert(adjacent1, vertexID2);
-				orderedUniqueInsert(adjacent1, vertexID3);
-				orderedUniqueInsert(adjacent2, vertexID1);
-				orderedUniqueInsert(adjacent2, vertexID3);
-				orderedUniqueInsert(adjacent3, vertexID1);
-				orderedUniqueInsert(adjacent3, vertexID2);
+				if(orderedUniqueInsert(adjacent1, vertexID2)) nadjs++;
+				if(orderedUniqueInsert(adjacent1, vertexID3)) nadjs++;
+				if(orderedUniqueInsert(adjacent2, vertexID1)) nadjs++;
+				if(orderedUniqueInsert(adjacent2, vertexID3)) nadjs++;
+				if(orderedUniqueInsert(adjacent3, vertexID1)) nadjs++;
+				if(orderedUniqueInsert(adjacent3, vertexID2)) nadjs++;
 			} else {
-				if (std::find(adjacent1->begin(), adjacent1->end(), vertexID2) == adjacent1->end()) adjacent1->push_back(vertexID2);
-				if (std::find(adjacent1->begin(), adjacent1->end(), vertexID3) == adjacent1->end()) adjacent1->push_back(vertexID3);
-				if (std::find(adjacent2->begin(), adjacent2->end(), vertexID1) == adjacent2->end()) adjacent2->push_back(vertexID1);
-				if (std::find(adjacent2->begin(), adjacent2->end(), vertexID3) == adjacent2->end()) adjacent2->push_back(vertexID3);
-				if (std::find(adjacent3->begin(), adjacent3->end(), vertexID1) == adjacent3->end()) adjacent3->push_back(vertexID1);
-				if (std::find(adjacent3->begin(), adjacent3->end(), vertexID2) == adjacent3->end()) adjacent3->push_back(vertexID2);
+				if (std::find(adjacent1->begin(), adjacent1->end(), vertexID2) == adjacent1->end()) { adjacent1->push_back(vertexID2); nadjs++; }
+				if (std::find(adjacent1->begin(), adjacent1->end(), vertexID3) == adjacent1->end()) { adjacent1->push_back(vertexID3); nadjs++; }
+				if (std::find(adjacent2->begin(), adjacent2->end(), vertexID1) == adjacent2->end()) { adjacent2->push_back(vertexID1); nadjs++; }
+				if (std::find(adjacent2->begin(), adjacent2->end(), vertexID3) == adjacent2->end()) { adjacent2->push_back(vertexID3); nadjs++; }
+				if (std::find(adjacent3->begin(), adjacent3->end(), vertexID1) == adjacent3->end()) { adjacent3->push_back(vertexID1); nadjs++; }
+				if (std::find(adjacent3->begin(), adjacent3->end(), vertexID2) == adjacent3->end()) { adjacent3->push_back(vertexID2); nadjs++; }
 			}
 		}
 		return obj_adjacents_arrayVector;
 	}
+
+	void calcMinMaxAdjCount(std::vector< uint >* obj_adjacents_arrayVector) {
+		maxAdjsCount = minAdjsCount = obj_adjacents_arrayVector[0].size();
+
+		for(int i=0; i<nels; i++) {
+			uint currentAdjsCount = obj_adjacents_arrayVector[i].size();
+			if(currentAdjsCount > maxAdjsCount) maxAdjsCount = currentAdjsCount;
+			else if(currentAdjsCount < minAdjsCount) minAdjsCount = currentAdjsCount;
+		}
+	}
+
+	vertex_struct** orderVertexByAdjCount(std::vector< uint >* obj_adjacents_arrayVector, bool sortAdjsCoalescent) {
+		
+		// vertex_arrayStruct creation
+		vertex_struct** vertex_arrayStruct = new vertex_struct* [nels];
+
+		for(int i=0; i<nels; i++){
+			vertex_struct* v = new vertex_struct();
+			v->currentIndex = i;
+			v->obj_vertex_vector_Index = i;
+			
+			//number of vertices adjacents to vertex i
+			v->adjsCount = obj_adjacents_arrayVector[i].size();
+			vertex_arrayStruct[i] = v;
+		}
+
+		for(int i=0; i<nels; i++)
+			for(uint index : obj_adjacents_arrayVector[i])
+				vertex_arrayStruct[i]->adjs.push_back(vertex_arrayStruct[index]);
+
+		// faces_arrayStruct creation
+		uint facesCount = obj->getFacesCount();
+		face_struct* faces_arrayStruct = new face_struct[facesCount];
+
+		for(int i=0; i<facesCount; i++){
+			faces_arrayStruct[i].faceVertices_struct_array[0] = vertex_arrayStruct[ obj->facesVertexIndex_vector[i*3] - 1 ];
+			faces_arrayStruct[i].faceVertices_struct_array[1] = vertex_arrayStruct[ obj->facesVertexIndex_vector[i*3+1] - 1 ];
+			faces_arrayStruct[i].faceVertices_struct_array[2] = vertex_arrayStruct[ obj->facesVertexIndex_vector[i*3+2] - 1 ];
+		}
+
+
+		//COUNTING SORT
+		countingSize = maxAdjsCount-minAdjsCount+1;
+		uint counting_array[countingSize] = {0};
+
+		for(int i=0; i<nels; i++) ++counting_array[obj_adjacents_arrayVector[i].size() - minAdjsCount];
+
+		//counting sort sums
+		for(int i=1; i<countingSize; i++) counting_array[i] += counting_array[i-1];
+
+		vertex_struct** orderedVertex_arrayStruct = new vertex_struct*[nels];
+		//insert ordered vertex
+		for(int i=0; i<nels; i++) {
+			vertex_struct * currVertex = vertex_arrayStruct[i];
+			uint currentAdjsCount = currVertex->adjsCount;
+			
+			//calc new orderedIndex from counting_array
+			uint orderedIndex = --counting_array[ currentAdjsCount - minAdjsCount ];
+			
+			//set to vertex in struct the new orderedIndex
+			currVertex->currentIndex = nels-1-orderedIndex;
+
+			orderedVertex_arrayStruct[nels-1 - orderedIndex] = currVertex;
+		}
+
+		// Update vertex index [1-based] of faces in obj
+		for(int i=0; i<obj->getFacesCount(); i++){
+			obj->facesVertexIndex_vector[i*3] = faces_arrayStruct[i].faceVertices_struct_array[0]->currentIndex + 1;
+			obj->facesVertexIndex_vector[i*3+1] = faces_arrayStruct[i].faceVertices_struct_array[1]->currentIndex + 1;
+			obj->facesVertexIndex_vector[i*3+2] = faces_arrayStruct[i].faceVertices_struct_array[2]->currentIndex + 1;
+		}
+
+
+		adjCounter = new uint[maxAdjsCount];
+		for(int i=0; i<maxAdjsCount; i++) adjCounter[i] = 0;
+		for(int i=0; i<maxAdjsCount; i++){
+			for(int j=0; j<nels; j++){
+				vertex_struct * currVertex = vertex_arrayStruct[j];
+				if(currVertex->adjsCount>=i+1) adjCounter[i]++;
+			}
+		}
+
+
+		if(sortAdjsCoalescent) {
+			for(int i=0; i<nels; i++) {
+				vertex_struct * currVertex = orderedVertex_arrayStruct[i];
+				std::vector<vertex_struct*> * v = &(currVertex->adjs);
+				
+				std::sort(v->begin(), v->end(), vertex_struct_cmp);
+			}
+		}
+		return orderedVertex_arrayStruct;
+		
+	}
+	float* fillVertex4Array(float* vertex4_array, std::vector< uint >* obj_adjacents_arrayVector){
+		uint currentAdjStartIndex = 0;
+		
+		for(int i=0; i<nels; i++) {	
+			glm::vec3 vertex = obj->vertex_vector[i];
+			vertex4_array[4*i] = vertex.x;
+			vertex4_array[4*i+1] = vertex.y;
+			vertex4_array[4*i+2] = vertex.z;
+
+			uint currentAdjsCount = obj_adjacents_arrayVector[i].size();
+			uint* adjIndexPtr = (uint*)(&vertex4_array[4*i+3]);
+			*adjIndexPtr = ((uint)currentAdjStartIndex)<<6;
+			*adjIndexPtr += (currentAdjsCount<<26)>>26;
+			
+			currentAdjStartIndex += currentAdjsCount;
+		}
+		return vertex4_array;
+	}
+	float* fillOrderedVertex4Array(float* vertex4_array, vertex_struct** orderedVertex_arrayStruct){
+		for(int i=0; i<nels; i++) {
+			vertex_struct * currVertex = orderedVertex_arrayStruct[i];
+			glm::vec3 vertex = obj->vertex_vector[currVertex->obj_vertex_vector_Index];
+			vertex4_array[4*i] = vertex.x;
+			vertex4_array[4*i+1] = vertex.y;
+			vertex4_array[4*i+2] = vertex.z;
+
+			uint* adjIndexPtr = (uint*)(&vertex4_array[4*i+3]);
+			*adjIndexPtr = currVertex->adjsCount;			
+		}
+	}
 	void init(){
 		bool orderedAdjsDiscoverInsert = true;
 		bool sortVertexArray = true;
+		bool sortAdjsCoalescent = true;
 
 		printf("=======  INIT DATA =======\n");
 		printf(" > Initializing data...\n");
@@ -266,191 +412,43 @@ public:
 
 		std::vector< uint >* obj_adjacents_arrayVector = discoverAdjacents(orderedAdjsDiscoverInsert);
 		
-		minAdjsCount = obj_adjacents_arrayVector[0].size();
-		maxAdjsCount = minAdjsCount;
+		calcMinMaxAdjCount(obj_adjacents_arrayVector);
 
-		if(sortVertexArray){
-
-		}
-		
-		struct vertex_struct{
-			uint currentIndex;
-			uint obj_vertex_vector_Index;
-			uint adjsCount;
-			std::vector<vertex_struct*> adjs;
-		};
-		
-
-		#define VERTEX_ORDERED 1 //vertici ordinati per numero di adiacenti
-		#if VERTEX_ORDERED
-		struct face_struct{
-			vertex_struct * faceVertices_struct_array[3];
-		};
-		#endif
-		
-		struct vertex_struct_comparator {
-			bool operator() (vertex_struct* i,vertex_struct* j) { return (i->currentIndex < j->currentIndex);}
-		} vertex_struct_cmp;
-		
-		#if VERTEX_ORDERED
-		face_struct* faces_arrayStruct = new face_struct[obj->getFacesCount()];
-		#endif
-		vertex_struct** vertex_arrayStruct = new vertex_struct*[nels];
-		
-		for(int i=0; i<nels; i++){
-			vertex_struct* v = new vertex_struct();
-			v->currentIndex = i;
-			v->obj_vertex_vector_Index = i;
-			
-			//number of vertices adjacents to vertex i
-			uint currentAdjsCount = obj_adjacents_arrayVector[i].size();
-				if(currentAdjsCount > maxAdjsCount) maxAdjsCount = currentAdjsCount;
-				else if(currentAdjsCount < minAdjsCount) minAdjsCount = currentAdjsCount;
-			v->adjsCount = currentAdjsCount;
-			
-			vertex_arrayStruct[i] = v;
-		}
-		
-		#if VERTEX_ORDERED
-		for(int i=0; i<obj->getFacesCount(); i++){
-			faces_arrayStruct[i].faceVertices_struct_array[0] = vertex_arrayStruct[ obj->facesVertexIndex_vector[i*3] - 1 ];
-			faces_arrayStruct[i].faceVertices_struct_array[1] = vertex_arrayStruct[ obj->facesVertexIndex_vector[i*3+1] - 1 ];
-			faces_arrayStruct[i].faceVertices_struct_array[2] = vertex_arrayStruct[ obj->facesVertexIndex_vector[i*3+2] - 1 ];
-		}
-		#endif
-		
-		countingSize = maxAdjsCount-minAdjsCount+1;
-		uint counting_array[countingSize] = {0};
-		
-		for(int i=0; i<nels; i++){
-			//counting elements
-			++counting_array[obj_adjacents_arrayVector[i].size() - minAdjsCount];
-			
-			for(uint index : obj_adjacents_arrayVector[i])
-				vertex_arrayStruct[i]->adjs.push_back(vertex_arrayStruct[index]);
-		}
-
-		//counting sort sums
-		for(int i=1; i<countingSize; i++) counting_array[i] += counting_array[i-1];
-		
-		vertex_struct** orderedVertex_arrayStruct = new vertex_struct*[nels];
-		//insert ordered vertex
-		for(int i=0; i<nels; i++) {
-			vertex_struct * currVertex = vertex_arrayStruct[i];
-			uint currentAdjsCount = currVertex->adjsCount;
-			
-			//calc new orderedIndex from counting_array
-			uint orderedIndex = --counting_array[ currentAdjsCount - minAdjsCount ];
-			//set to vertex in struct the new orderedIndex
-
-			currVertex->currentIndex = nels-1-orderedIndex;
-
-			orderedVertex_arrayStruct[nels-1 - orderedIndex] = currVertex;
-		}
-		
-		#if VERTEX_ORDERED
-		for(int i=0; i<obj->getFacesCount(); i++){
-			obj->facesVertexIndex_vector[i*3] = faces_arrayStruct[i].faceVertices_struct_array[0]->currentIndex + 1;
-			obj->facesVertexIndex_vector[i*3+1] = faces_arrayStruct[i].faceVertices_struct_array[1]->currentIndex + 1;
-			obj->facesVertexIndex_vector[i*3+2] = faces_arrayStruct[i].faceVertices_struct_array[2]->currentIndex + 1;
-		}
-		#endif
-		
-		adjCounter = new uint[maxAdjsCount];
-		for(int i=0; i<maxAdjsCount; i++) adjCounter[i] = 0;
-		for(int i=0; i<maxAdjsCount; i++){
-			for(int j=0; j<nels; j++){
-				vertex_struct * currVertex = vertex_arrayStruct[j];
-				if(currVertex->adjsCount>=i+1) adjCounter[i]++;
-			}
-		}
-		
-		for(int i=0; i<maxAdjsCount; i++) std::cout<<adjCounter[i]<<"  ";
-		std::cout<<std::endl;
+		vertex_struct** orderedVertex_arrayStruct;
+		if(sortVertexArray) orderedVertex_arrayStruct = orderVertexByAdjCount(obj_adjacents_arrayVector, sortAdjsCoalescent);
 
 		vertex4_array = new float[4*nels];
-		uint currentAdjStartIndex = 0;
-		
-		for(int i=0; i<nels; i++) {
-			vertex_struct * currVertex = orderedVertex_arrayStruct[i];
-			#if VERTEX_ORDERED
-			glm::vec3 vertex = obj->vertex_vector[currVertex->obj_vertex_vector_Index];
-			#else
-			glm::vec3 vertex = obj->vertex_vector[i];
-			#endif
-			vertex4_array[4*i] = vertex.x;
-			vertex4_array[4*i+1] = vertex.y;
-			vertex4_array[4*i+2] = vertex.z;
 
-			#if VERTEX_ORDERED
-			uint currentAdjsCount = currVertex->adjsCount;
-			#else
-			uint currentAdjsCount = obj_adjacents_arrayVector[i].size();
-			#endif
-			uint* adjIndexPtr = (uint*)(&vertex4_array[4*i+3]);
-			*adjIndexPtr = ((uint)currentAdjStartIndex)<<6;
-			*adjIndexPtr += (currentAdjsCount<<26)>>26;
-			
-			currentAdjStartIndex += currentAdjsCount;
-			
-		}
-		#define COAL_INDEX_ORDERED 1
-		#if VERTEX_ORDERED && COAL_INDEX_ORDERED
-		for(int i=0; i<nels; i++) {
-			vertex_struct * currVertex = orderedVertex_arrayStruct[i];
-			std::vector<vertex_struct*> * v = &(currVertex->adjs);
-			
-			std::sort(v->begin(), v->end(), vertex_struct_cmp);
-		}
-		#endif
+		if(sortVertexArray) fillOrderedVertex4Array(vertex4_array, orderedVertex_arrayStruct);
+		else fillVertex4Array(vertex4_array, obj_adjacents_arrayVector);
 		
-		// Now, currentAdjStartIndex is the total adjacents number.
-		nadjs = currentAdjStartIndex;
 		adjs_array = new uint[nadjs];
 		uint adjIndex = 0;
-		#if VERTEX_ORDERED
-		/*
-		for(int i=0; i<nels; i++) {
-			vertex_struct * currVertex = orderedVertex_arrayStruct[i];
-			for( vertex_struct* adj : currVertex->adjs)
-				adjs_array[adjIndex++] = adj->currentIndex;
-		}
-		*/
 
-		for(int i=0; i<maxAdjsCount; i++){
-			for(int j=0; j<nels; j++){
-				vertex_struct * currVertex = orderedVertex_arrayStruct[j];
-				if( currVertex->adjsCount >= i+1 )
-					adjs_array[adjIndex++] = currVertex->adjs[i]->currentIndex;
+		if(sortVertexArray) { // ----------------------------------------------------------------------------------
+			/*
+			for(int i=0; i<nels; i++) {
+				vertex_struct * currVertex = orderedVertex_arrayStruct[i];
+				for( vertex_struct* adj : currVertex->adjs)
+					adjs_array[adjIndex++] = adj->currentIndex;
+			}
+			*/
+
+			for(int i=0; i<maxAdjsCount; i++){
+				for(int j=0; j<nels; j++){
+					vertex_struct * currVertex = orderedVertex_arrayStruct[j];
+					if( currVertex->adjsCount >= i+1 )
+						adjs_array[adjIndex++] = currVertex->adjs[i]->currentIndex;
+				}
+			}
+			printf("nadjs: %d vs adjIndex: %d\n", nadjs, adjIndex);
+		}
+		else{ // ----------------------------------------------------------------------------------
+			for(int i=0; i<nels; i++) {
+				for( uint adjIndex : obj_adjacents_arrayVector[i])
+					adjs_array[adjIndex++] = adjIndex;
 			}
 		}
-		printf("nadjs: %d vs adjIndex: %d\n", nadjs, adjIndex);
-
-		//DEBUG PRINT
-		/*
-		for(int i=0; i<nels; i++) {
-			printf("vertex %d ->", i);
-			vertex_struct * currVertex = orderedVertex_arrayStruct[i];
-			for( vertex_struct* adj : currVertex->adjs )
-				printf( " %d",adj->currentIndex );
-			printf("\n");
-		}
-		/*
-		for(int i=0; i<nadjs; i++) {
-			printf("%d\n", adjs_array[i]);
-		}
-		*/
-		//DEBUG END
-			
-		
-
-
-		#else
-		for(int i=0; i<nels; i++) {
-			for( uint adjIndex : obj_adjacents_arrayVector[i])
-				adjs_array[adjIndex++] = adjIndex;
-		}
-		#endif
 		
 		meanAdjsCount = nadjs/(float)nels;
 		memsize = 4*nels*sizeof(float);
