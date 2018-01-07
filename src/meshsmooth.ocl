@@ -29,7 +29,7 @@ kernel void smooth(
 	float4 res = vertex + factor*umbrellaOperator;
 	res.w = lastComponent;
 	result_vertex4_array[i] = res;
-	//printf("result vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, res.x, res.y, res.z, adjsIndexOffset, adjsCount);
+	if(i<10) printf("result vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, res.x, res.y, res.z, adjsIndexOffset, adjsCount);
 }
 
 kernel void smooth_coalescence(

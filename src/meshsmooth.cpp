@@ -11,12 +11,10 @@
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
 
-#define IN_MESH CUBE
+#define IN_MESH WRESTLERS
 #define OUT_MESH "res/out.obj"
 		
-#define INDEX_ORDERED 1
-#define VERTEX_ORDERED 0 //vertici ordinati per numero di adiacenti
-#define COAL_INDEX_ORDERED 0
+
 
 #include "ocl_boiler.h"
 #include <iostream>
@@ -166,6 +164,14 @@ public:
 		printf(" > Saving result to %s...\n", out_path.c_str());
 		char line[512];
 
+
+
+		for(int i=0; i<10; i++) {
+			std::cout << vertex_vector[i].x << " ";
+			std::cout << vertex_vector[i].y << " ";
+			std::cout << vertex_vector[i].z << std::endl;
+		}
+
 		FILE * out_file = fopen(out_path.c_str(), "w");
 		if( out_file == NULL ) return OBJException("fopen() -> Impossible to open the file");
 
@@ -212,20 +218,7 @@ public:
 		this->obj = obj;
 		init();
 	}
-
-	void init(){
-		
-		printf("=======  INIT DATA =======\n");
-		printf(" > Initializing data...\n");
-
-		if(obj == nullptr || !obj->hasValidData()) {
-			printf("Smoothing(OBJ) -> obj null or invalid data");
-			return;
-		}
-
-		// Init number of vertex
-		nels = obj->getVerticesCount();
-		
+	std::vector< uint >* discoverAdjacents(bool orderedInsert){
 		// Discover adjacents vertex for each vertex
 		std::vector< uint >* obj_adjacents_arrayVector = new std::vector< uint >[nels];
 
@@ -238,25 +231,47 @@ public:
 			std::vector< uint >* adjacent2 = &obj_adjacents_arrayVector[vertexID2];
 			std::vector< uint >* adjacent3 = &obj_adjacents_arrayVector[vertexID3];
 			
-			#if INDEX_ORDERED
+			if(orderedInsert){
 				orderedUniqueInsert(adjacent1, vertexID2);
 				orderedUniqueInsert(adjacent1, vertexID3);
 				orderedUniqueInsert(adjacent2, vertexID1);
 				orderedUniqueInsert(adjacent2, vertexID3);
 				orderedUniqueInsert(adjacent3, vertexID1);
 				orderedUniqueInsert(adjacent3, vertexID2);
-			#else
+			} else {
 				if (std::find(adjacent1->begin(), adjacent1->end(), vertexID2) == adjacent1->end()) adjacent1->push_back(vertexID2);
 				if (std::find(adjacent1->begin(), adjacent1->end(), vertexID3) == adjacent1->end()) adjacent1->push_back(vertexID3);
 				if (std::find(adjacent2->begin(), adjacent2->end(), vertexID1) == adjacent2->end()) adjacent2->push_back(vertexID1);
 				if (std::find(adjacent2->begin(), adjacent2->end(), vertexID3) == adjacent2->end()) adjacent2->push_back(vertexID3);
 				if (std::find(adjacent3->begin(), adjacent3->end(), vertexID1) == adjacent3->end()) adjacent3->push_back(vertexID1);
 				if (std::find(adjacent3->begin(), adjacent3->end(), vertexID2) == adjacent3->end()) adjacent3->push_back(vertexID2);
-			#endif
+			}
 		}
+		return obj_adjacents_arrayVector;
+	}
+	void init(){
+		bool orderedAdjsDiscoverInsert = true;
+		bool sortVertexArray = true;
+
+		printf("=======  INIT DATA =======\n");
+		printf(" > Initializing data...\n");
+
+		if(obj == nullptr || !obj->hasValidData()) {
+			printf("Smoothing(OBJ) -> obj null or invalid data");
+			return;
+		}
+
+		// Init number of vertex
+		nels = obj->getVerticesCount();
+
+		std::vector< uint >* obj_adjacents_arrayVector = discoverAdjacents(orderedAdjsDiscoverInsert);
 		
 		minAdjsCount = obj_adjacents_arrayVector[0].size();
 		maxAdjsCount = minAdjsCount;
+
+		if(sortVertexArray){
+
+		}
 		
 		struct vertex_struct{
 			uint currentIndex;
@@ -265,6 +280,8 @@ public:
 			std::vector<vertex_struct*> adjs;
 		};
 		
+
+		#define VERTEX_ORDERED 1 //vertici ordinati per numero di adiacenti
 		#if VERTEX_ORDERED
 		struct face_struct{
 			vertex_struct * faceVertices_struct_array[3];
@@ -347,10 +364,6 @@ public:
 				if(currVertex->adjsCount>=i+1) adjCounter[i]++;
 			}
 		}
-		/*
-		for(int i=0; i<countingSize; i++) adjCounter[i+minAdjsCount-1] = counting_array[maxAdjsCount-minAdjsCount-i];
-		//for(int i=0; i<countingSize; i++) std::cout<<i+minAdjsCount<<"  ";
-		for(int i=0; i<minAdjsCount-1; i++) adjCounter[i] = adjCounter[minAdjsCount-1];*/
 		
 		for(int i=0; i<maxAdjsCount; i++) std::cout<<adjCounter[i]<<"  ";
 		std::cout<<std::endl;
@@ -381,7 +394,7 @@ public:
 			currentAdjStartIndex += currentAdjsCount;
 			
 		}
-		
+		#define COAL_INDEX_ORDERED 1
 		#if VERTEX_ORDERED && COAL_INDEX_ORDERED
 		for(int i=0; i<nels; i++) {
 			vertex_struct * currVertex = orderedVertex_arrayStruct[i];
@@ -474,8 +487,12 @@ public:
 		cl_mem cl_adjsCounter = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, maxAdjsCount*sizeof(uint), adjCounter, &err);
 
 		// Extract kernels
+		#if 1
+		cl_kernel smooth_k = clCreateKernel(OCLenv->program, "smooth_coalescence", &err);
+		#else
 		cl_kernel smooth_k = clCreateKernel(OCLenv->program, "smooth", &err);
-		//cl_kernel smooth_k = clCreateKernel(OCLenv->program, "smooth_coalescence", &err);
+		#endif
+
 		ocl_check(err, "create kernel smooth");
 
 		// Set preferred_wg size from device info
@@ -485,21 +502,27 @@ public:
 		printf("====== KERNEL LAUNCH =======\n");
 		cl_event smooth_evt, smooth_evt2;
 		printf("start\n");
-		/*
-		for(int iter=0; iter<iterations; iter++) {
-			smooth_evt = smooth(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
-			smooth_evt2 = smooth(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_vertex4_array, nels, mi, 1, &smooth_evt);
-		}
-		*/
+		
 
-		//smooth_evt = smooth_coalescence(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, 0, NULL);
-		smooth_evt = smooth(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, 0, NULL);
-		/*
+		#if 1
 		for(int iter=0; iter<iterations; iter++) {
 			smooth_evt = smooth_coalescence(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
 			smooth_evt2 = smooth_coalescence(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_vertex4_array, nels, mi, 1, &smooth_evt);
 		}
-		*/
+		#else
+		for(int iter=0; iter<iterations; iter++) {
+			smooth_evt = smooth(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
+			smooth_evt2 = smooth(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_vertex4_array, nels, mi, 1, &smooth_evt);
+		}
+		#endif
+
+		
+
+		//smooth_evt = smooth_coalescence(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, 0, NULL);
+		//smooth_evt = smooth(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, 0, NULL);
+		
+		
+		
 		// Copy result
 		result_vertex4_array = new float[4*nels];
 		if (!result_vertex4_array) printf("error res\n");
@@ -507,7 +530,7 @@ public:
 		cl_event copy_evt;
 		err = clEnqueueReadBuffer(OCLenv->queue, cl_vertex4_array, CL_TRUE,
 			0, memsize, result_vertex4_array,
-			1, &smooth_evt/*smooth_evt2*/, &copy_evt);
+			1, &smooth_evt2, &copy_evt);
 		ocl_check(err, "read buffer vertex4_array");
 		
 		printf("stop\n");
@@ -515,6 +538,8 @@ public:
 		err = clWaitForEvents(1, &copy_evt);
 		ocl_check(err, "clWaitForEvents");
 		
+		
+
 		for(int i=0; i<nels; i++) {
 			obj->vertex_vector[i].x = result_vertex4_array[i*4];
 			obj->vertex_vector[i].y = result_vertex4_array[i*4+1];
