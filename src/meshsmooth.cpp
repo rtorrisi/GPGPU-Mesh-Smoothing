@@ -1,5 +1,6 @@
 #define OCL_PLATFORM 1
 #define OCL_DEVICE 0
+#define OCL_FILENAME "src/meshsmooth.ocl"
 
 #define WRESTLERS "res/wrestlers.obj"
 #define SUZANNE "res/suzanne.obj"
@@ -10,10 +11,8 @@
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
 
-#define IN_MESH SUZANNE
+#define IN_MESH CUBE
 #define OUT_MESH "res/out.obj"
-
-#define OCL_FILENAME "src/meshsmooth.ocl"
 
 #include "ocl_boiler.h"
 #include <iostream>
@@ -29,16 +28,13 @@
 typedef unsigned int uint;
 size_t preferred_wg_smooth;
 
-
 void orderedUniqueInsert(std::vector< uint >*vertexAdjacents, uint vertexID) {
 	std::vector< uint >::iterator it;
 	for(it = vertexAdjacents->begin(); it != vertexAdjacents->end() && *it < vertexID; it++) {}
-	if(it == vertexAdjacents->end() || *it != vertexID){
-		vertexAdjacents->insert(it, vertexID);
-	}
+	if(it == vertexAdjacents->end() || *it != vertexID) vertexAdjacents->insert(it, vertexID);
 }
 
-class OpenCLEnvironment{
+class OpenCLEnvironment {
 public:
 
 	cl_platform_id platformID;
@@ -59,7 +55,7 @@ public:
 };
 
 class OBJ {
-	private:
+private:
 	
 	bool validData;
 	uint verticesCount;
@@ -69,13 +65,18 @@ class OBJ {
 		validData = false;
 		verticesCount = facesCount = 0;
 	}
+	void clear() {
+		init();
+		vertex_vector.clear();
+		facesVertexIndex_vector.clear();
+	}
 	bool OBJException(std::string strerror) {
 		printf("Error: %s!\n", strerror);
 		validData = false;
 		return false;
 	}
 	
-	public:
+public:
 	
 	std::vector< glm::vec3 > vertex_vector;
 	std::vector< glm::vec3 > normal_vector;
@@ -84,17 +85,13 @@ class OBJ {
 	std::vector< uint > facesNormalIndex_vector;
 	std::vector< uint > facesUVIndex_vector;
 
-	OBJ(){}
+	OBJ(){init();}
 
 	OBJ(std::string path){
 		init();
 		load(path);
 	}
-	void clear(){
-		init();
-		vertex_vector.clear();
-		facesVertexIndex_vector.clear();
-	}
+	
 	bool load(std::string path){
 		
 		clear();
@@ -149,7 +146,7 @@ class OBJ {
 			}
 		}
 		printf(" > %s loaded!\n", path.c_str());
-		printf("============================\n");
+		printf("============================\n\n");
 		validData = true;
 		return true;
 	}
@@ -185,20 +182,20 @@ class OBJ {
 };
 
 class Smoothing {
-	private:
-		uint nels, nadjs, minAdjsCount, maxAdjsCount;
-		float meanAdjsCount;
+private:
+	uint nels, nadjs, minAdjsCount, maxAdjsCount;
+	float meanAdjsCount;
 
-		const OpenCLEnvironment* OCLenv;
-		const OBJ* obj;
-		
-	public:
-		size_t memsize, ajdsmemsize;
-		float* vertex4_array;
-		uint* adjs_array;
+	const OpenCLEnvironment* OCLenv;
+	const OBJ* obj;
+	
+public:
+	size_t memsize, ajdsmemsize;
+	float* vertex4_array;
+	uint* adjs_array;
 
-		uint countingSize;
-		uint* adjCounter;
+	uint countingSize;
+	uint* adjCounter;
 
 
 	Smoothing(const OpenCLEnvironment* OCLenv, const OBJ* obj){
@@ -210,11 +207,10 @@ class Smoothing {
 	void init(){
 		
 		printf("=======  INIT DATA =======\n");
-
 		printf(" > Initializing data...\n");
 
-		if(!obj->hasValidData()) {
-			printf("Smoothing(OBJ) -> obj has invalid data");
+		if(obj == nullptr || !obj->hasValidData()) {
+			printf("Smoothing(OBJ) -> obj null or invalid data");
 			return;
 		}
 
@@ -430,7 +426,7 @@ class Smoothing {
 		std::cout << " # Iterations: " << iterations << std::endl;
 		std::cout << " Lambda factor: " << lambda << std::endl;
 		std::cout << " Mi factor: " << mi << std::endl;
-		printf("============================\n");
+		printf("============================\n\n");
 		printf("========= OBJ INFO =========\n");
 		std::cout << " Input .obj path: " << IN_MESH << std::endl;
 		std::cout << " Output .obj path: " << OUT_MESH << std::endl;
@@ -495,7 +491,7 @@ class Smoothing {
 		printf("copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt),
 			(2.0*memsize)/runtime_ns(copy_evt));
 			
-		printf("============================\n");
+		printf("============================\n\n");
 	}
 
 	cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
@@ -556,8 +552,6 @@ class Smoothing {
 };
 
 
-
-
 int main(int argc, char *argv[]) {
 	
 	uint iterations = (argc>=2) ? atoi(argv[1]) : 1 ;
@@ -570,10 +564,9 @@ int main(int argc, char *argv[]) {
 	Smoothing smoothing(OCLenv, obj);
 
 	smoothing.execute(iterations, lambda, mi);
-
+	
+	//writeOBJFile(IN_MESH, OUT_MESH, result_vertex4_array);
 	delete OCLenv;
 	delete obj;
-		
-	//writeOBJFile(IN_MESH, OUT_MESH, result_vertex4_array);
 	return 0;
 }
