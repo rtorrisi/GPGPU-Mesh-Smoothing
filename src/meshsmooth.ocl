@@ -56,8 +56,8 @@ kernel void smooth_coalescence(
 	{
 		current_adj = vertex4_array[adjs_array[i+offset]];
 		umbrellaOperator += current_adj-vertex;
+		//printf("Adj %d of vertex %d is vertex %d -> %f / %f / %f\n", adjIndex, i, adjs_array[i+offset], current_adj.x, current_adj.y, current_adj.z);
 		offset += adjsCounter[adjIndex];
-		//printf("Adj %d of vertex %d -> %f / %f / %f\n", adjIndex, i, adj.x, adj.y, adj.z);
 		//printf("Adj %d of vertex %d -> %d\n", adjIndex, i, adjs_array[i+offset]);
 	}
 	umbrellaOperator /= adjsCount; //controllare che non sia un vertice isolato
