@@ -23,13 +23,14 @@ kernel void smooth(
 	{
 		float4 adj = vertex4_array[adjs_array[adjsIndexOffset+adjIndex]];
 		umbrellaOperator += ( adj-vertex );
-		//printf("Adj %d of vertex %d -> %f / %f / %f\n", adjIndex, i, adj.x, adj.y, adj.z);
+		//printf("[%d] %d^o adj of vertex %d -> %f / %f / %f\n", adjs_array[adjsIndexOffset+adjIndex], adjIndex, i, adj.x, adj.y, adj.z);
+
 	}
 	umbrellaOperator /= adjsCount;
 	float4 res = vertex + factor*umbrellaOperator;
 	res.w = lastComponent;
 	result_vertex4_array[i] = res;
-	if(i<10) printf("result vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, res.x, res.y, res.z, adjsIndexOffset, adjsCount);
+	//if(i<10) printf("result vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, res.x, res.y, res.z, adjsIndexOffset, adjsCount);
 }
 
 kernel void smooth_coalescence(
