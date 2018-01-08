@@ -535,11 +535,18 @@ public:
 			obj->vertex_vector[i].z = result_vertex4_array[i*4+2];
 		}
 		
-		printf("smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
-			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
-		printf("copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt),
-			(2.0*memsize)/runtime_ns(copy_evt));
+		if(sortVertexArray) {
+			printf("smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
+				(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
 			
+		} else {
+			printf("smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
+				(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int) + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
+		}
+		
+		printf("copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt),
+				(2.0*memsize)/runtime_ns(copy_evt));
+		
 		printf("============================\n\n");
 	}
 
