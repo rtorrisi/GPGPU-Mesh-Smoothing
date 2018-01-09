@@ -1,3 +1,15 @@
+#include "ocl_boiler.h"
+#include <iostream>
+#include <glm/vec4.hpp>
+#include <glm/vec3.hpp>
+#include <glm/vec2.hpp>
+#include <glm/gtx/string_cast.hpp>
+#include <stdio.h>
+#include <string>
+#include <vector>
+#include <algorithm>
+#include<chrono>
+
 #define OCL_PLATFORM 0
 #define OCL_DEVICE 0
 #define OCL_FILENAME "src/meshsmooth.ocl"
@@ -13,20 +25,17 @@
 
 #define IN_MESH WRESTLERS
 #define OUT_MESH "res/out.obj"
-		
-#include "ocl_boiler.h"
-#include <iostream>
-#include <glm/vec4.hpp>
-#include <glm/vec3.hpp>
-#include <glm/vec2.hpp>
-#include <glm/gtx/string_cast.hpp>
-#include <stdio.h>
-#include <string>
-#include <vector>
-#include <algorithm>
+
+#define INIT_TIMER auto start_time = std::chrono::high_resolution_clock::now()
+#define START_TIMER start_time = std::chrono::high_resolution_clock::now()
+#define ELAPSED_TIME std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now()-start_time).count()
 
 typedef unsigned int uint;
 size_t preferred_wg_smooth;
+
+void printElapsedTime_ms(std::string str, unsigned long long int microseconds) {
+	std::cout << " " << str << " : " << microseconds/1000.f << "ms\n";
+}
 
 bool orderedUniqueInsert(std::vector< uint >*vertexAdjacents, uint vertexID) {
 	std::vector< uint >::iterator it;
@@ -101,6 +110,9 @@ public:
 		printf("=========== LOAD ===========\n");
 		printf(" > Loading %s...\n", path.c_str());
 		
+		INIT_TIMER;
+		START_TIMER;
+		
 		FILE * in_file = fopen(path.c_str(), "r");
 		if( in_file == NULL ) return OBJException("fopen() -> Impossible to open the file");
 		while( 1 ){ // parsing
@@ -155,6 +167,7 @@ public:
 				facesCount++;
 			}
 		}
+		printElapsedTime_ms("load OBJ", ELAPSED_TIME);
 		printf(" > %s loaded!\n", path.c_str());
 		printf("============================\n\n");
 		validData = true;
@@ -164,6 +177,8 @@ public:
 	bool write(std::string out_path) {
 		printf("========= SAVE OBJ =========\n");
 		printf(" > Saving result to %s...\n", out_path.c_str());
+		INIT_TIMER;
+		START_TIMER;
 		char line[512];
 
 		FILE * out_file = fopen(out_path.c_str(), "w");
@@ -181,6 +196,7 @@ public:
 		for(int i=0; i<facesCount; i++){
 			fprintf(out_file, "f %d %d %d\n", facesVertexIndex_vector[i*3], facesVertexIndex_vector[i*3+1], facesVertexIndex_vector[i*3+2]);
 		}
+		printElapsedTime_ms("write OBJ", ELAPSED_TIME);
 		printf(" > Result saved to %s!\n", OUT_MESH);
 		printf("============================\n");
 	}
@@ -365,6 +381,8 @@ public:
 	}
 	
 	void fillVertex4Array(float* vertex4_array){
+		INIT_TIMER;
+		START_TIMER;
 		uint currentAdjStartIndex = 0;
 		
 		for(int i=0; i<nels; i++) {	
@@ -380,9 +398,12 @@ public:
 			
 			currentAdjStartIndex += currentAdjsCount;
 		}
+		printElapsedTime_ms("fillVertex4Array", ELAPSED_TIME);
 	}
 	
 	void fillOrderedVertex4Array(float* vertex4_array, vertex_struct** orderedVertex_arrayStruct){
+		INIT_TIMER;
+		START_TIMER;
 		for(int i=0; i<nels; i++) {
 			vertex_struct * currVertex = orderedVertex_arrayStruct[i];
 			glm::vec3 vertex = obj->vertex_vector[currVertex->obj_vertex_vector_Index];
@@ -393,16 +414,22 @@ public:
 			uint* adjIndexPtr = (uint*)(&vertex4_array[4*i+3]);
 			*adjIndexPtr = currVertex->adjsCount;			
 		}
+		printElapsedTime_ms("fillOrderedVertex4Array", ELAPSED_TIME);
 	}
 	
 	void fillVertexAdjsArray() {
+		INIT_TIMER;
+		START_TIMER;
 		uint adjsIndex = 0;
 		for(int i=0; i<nels; i++)
 			for( uint currentAdjIndex : obj_adjacents_arrayVector[i])
 				adjs_array[adjsIndex++] = currentAdjIndex;
+		printElapsedTime_ms("fillVertexAdjsArray", ELAPSED_TIME);
 	}
 	
 	void fillOrderedVertexAdjsArray(vertex_struct** orderedVertex_arrayStruct) {
+		INIT_TIMER;
+		START_TIMER;
 		uint adjsIndex = 0;
 		for(int i=0; i<maxAdjsCount; i++)
 			for(int j=0; j<nels; j++){
@@ -417,6 +444,7 @@ public:
 			for( vertex_struct* adj : currVertex->adjs)
 				adjs_array[adjsIndex++] = adj->currentIndex;
 		}*/
+		printElapsedTime_ms("fillOrderedVertexAdjsArray", ELAPSED_TIME);
 	}
 	
 	void init(){
@@ -497,7 +525,8 @@ public:
 		
 		
 		printf("====== KERNEL LAUNCH =======\n");
-		printf("start\n");
+		INIT_TIMER;
+		START_TIMER;
 		
 		cl_event smooth_evt, smooth_evt2;
 		if(sortVertexArray) {
@@ -512,6 +541,10 @@ public:
 			}
 		}
 		
+		err = clWaitForEvents(1, &smooth_evt2);
+		ocl_check(err, "clWaitForEvents");
+		const unsigned long long int elapsedTime = ELAPSED_TIME;
+		
 		// Copy result
 		result_vertex4_array = new float[4*nels];
 		if (!result_vertex4_array) printf("error res\n");
@@ -522,13 +555,11 @@ public:
 			1, &smooth_evt2, &copy_evt);
 		ocl_check(err, "read buffer vertex4_array");
 		
-		printf("stop\n");
 		
 		err = clWaitForEvents(1, &copy_evt);
 		ocl_check(err, "clWaitForEvents");
 		
 		
-
 		for(int i=0; i<nels; i++) {
 			obj->vertex_vector[i].x = result_vertex4_array[i*4];
 			obj->vertex_vector[i].y = result_vertex4_array[i*4+1];
@@ -536,16 +567,19 @@ public:
 		}
 		
 		if(sortVertexArray) {
-			printf("smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
-				(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
+			printf(" smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
+				(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int) + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
 			
 		} else {
-			printf("smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
-				(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int) + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
+			printf(" smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
+				(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
 		}
 		
-		printf("copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt),
-				(2.0*memsize)/runtime_ns(copy_evt));
+		printf(" copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt), (2.0*memsize)/runtime_ns(copy_evt));
+				
+		printElapsedTime_ms("kernels total time", elapsedTime);
+		printf(" ~ %g smooth pass(es)/sec\n", 1/(runtime_ms(smooth_evt)/1000.0f) );
+		if(elapsedTime!=0) printf(" ~ %g smooth pass(es)/sec\n", (2*iterations)/(elapsedTime/1000000.0f) );
 		
 		printf("============================\n\n");
 	}
@@ -608,9 +642,9 @@ public:
 };
 
 
-#define ORDERED_ADJS_DISCOVER_INSERT 1
-#define SORT_VERTEX_ARRAY 1
-#define SORT_ADJS_COALESCENT 1
+#define ORDERED_ADJS_DISCOVER_INSERT 0
+#define SORT_VERTEX_ARRAY 0
+#define SORT_ADJS_COALESCENT 0
 
 int main(int argc, char *argv[]) {
 	
@@ -627,7 +661,6 @@ int main(int argc, char *argv[]) {
 	
 	obj->write(OUT_MESH);
 
-	
 	delete OCLenv;
 	delete obj;
 	return 0;
