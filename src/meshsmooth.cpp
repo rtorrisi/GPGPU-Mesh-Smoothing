@@ -14,6 +14,10 @@
 #define OCL_DEVICE 0
 #define OCL_FILENAME "src/meshsmooth.ocl"
 
+#define ORDERED_ADJS_DISCOVER_INSERT 1
+#define SORT_VERTEX_ARRAY 1
+#define SORT_ADJS_COALESCENT 1
+
 #define WRESTLERS "res/wrestlers.obj"
 #define SUZANNE "res/suzanne.obj"
 #define EGYPT "res/egypt.obj"
@@ -33,11 +37,12 @@
 typedef unsigned int uint;
 size_t preferred_wg_smooth;
 
-void printElapsedTime_ms(std::string str, unsigned long long int microseconds) {
-	std::cout << " " << str << " : " << microseconds/1000.f << "ms\n";
+void printElapsedTime_ms(const char * str, const unsigned long long int microseconds) {
+	if(microseconds==0) printf(" %s : < 15ms\n", str);
+	else printf(" %s : %gms\n", str, microseconds/(double)1000);
 }
 
-bool orderedUniqueInsert(std::vector< uint >*vertexAdjacents, uint vertexID) {
+bool orderedUniqueInsert(std::vector< uint >*vertexAdjacents, const uint vertexID) {
 	std::vector< uint >::iterator it;
 	for(it = vertexAdjacents->begin(); it != vertexAdjacents->end() && *it < vertexID; it++) {}
 	if(it == vertexAdjacents->end() || *it != vertexID) {
@@ -56,7 +61,7 @@ public:
 	cl_command_queue queue;
 	cl_program program;
 
-	OpenCLEnvironment(cl_uint platformIndex, cl_uint deviceIndex, const char* programPath){
+	OpenCLEnvironment(const cl_uint platformIndex, const cl_uint deviceIndex, const char* programPath){
 		printf("\n======= OPENCL INFO ========\n");
 		platformID = select_platform(platformIndex);
 		deviceID = select_device(platformID, deviceIndex);
@@ -82,7 +87,7 @@ private:
 		vertex_vector.clear();
 		facesVertexIndex_vector.clear();
 	}
-	bool OBJException(std::string strerror) {
+	bool OBJException(const char * strerror) {
 		printf("Error: %s!\n", strerror);
 		return false;
 	}
@@ -246,7 +251,7 @@ public:
 	uint* adjCounter;
 
 
-	Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj, bool orderedAdjsDiscoverInsert, bool sortVertexArray, bool sortAdjsCoalescent){
+	Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj, const bool orderedAdjsDiscoverInsert, const bool sortVertexArray, const bool sortAdjsCoalescent){
 		this->OCLenv = OCLenv;
 		this->obj = obj;
 		this->orderedAdjsDiscoverInsert = orderedAdjsDiscoverInsert;
@@ -255,7 +260,7 @@ public:
 		init();
 	}
 	
-	void discoverAdjacents(bool orderedInsert){
+	void discoverAdjacents(const bool orderedInsert){
 		// Discover adjacents vertex for each vertex
 		obj_adjacents_arrayVector = new std::vector< uint >[nels];
 
@@ -296,7 +301,7 @@ public:
 		}
 	}
 
-	vertex_struct** orderVertexByAdjCount(bool sortAdjsCoalescent) {
+	vertex_struct** orderVertexByAdjCount(const bool sortAdjsCoalescent) {
 		
 		// vertex_arrayStruct creation
 		vertex_struct** vertex_arrayStruct = new vertex_struct* [nels];
@@ -578,8 +583,7 @@ public:
 		printf(" copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt), (2.0*memsize)/runtime_ns(copy_evt));
 				
 		printElapsedTime_ms("kernels total time", elapsedTime);
-		printf(" ~ %g smooth pass(es)/sec\n", 1/(runtime_ms(smooth_evt)/1000.0f) );
-		if(elapsedTime!=0) printf(" ~ %g smooth pass(es)/sec\n", (2*iterations)/(elapsedTime/1000000.0f) );
+		printf(" ~ %g smooth pass(es)/sec\n", 1/(runtime_ms(smooth_evt)/(double)1000) );
 		
 		printf("============================\n\n");
 	}
@@ -641,16 +645,11 @@ public:
 	}	
 };
 
-
-#define ORDERED_ADJS_DISCOVER_INSERT 0
-#define SORT_VERTEX_ARRAY 0
-#define SORT_ADJS_COALESCENT 0
-
-int main(int argc, char *argv[]) {
+int main(const int argc, const char *argv[]) {
 	
-	uint iterations = (argc>=2) ? atoi(argv[1]) : 1 ;
-	float lambda = (argc>=4) ? atof(argv[2]) : 0.5f;
-	float mi = (argc>=4) ? atof(argv[3]) : -0.5f;
+	const uint iterations = (argc>=2) ? atoi(argv[1]) : 1 ;
+	const float lambda = (argc>=4) ? atof(argv[2]) : 0.5f;
+	const float mi = (argc>=4) ? atof(argv[3]) : -0.5f;
 	
 	OpenCLEnvironment *OCLenv = new OpenCLEnvironment(OCL_PLATFORM, OCL_DEVICE, OCL_FILENAME);
 

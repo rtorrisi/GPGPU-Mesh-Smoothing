@@ -2,8 +2,8 @@
 #define COUNT_BITS 6
 
 kernel void smooth(
-	global float4 * restrict vertex4_array,
-	global unsigned int * restrict adjs_array,
+	global const float4 * restrict vertex4_array,
+	global const unsigned int * restrict adjs_array,
 	global float4 * restrict result_vertex4_array,
 	unsigned int nels, float factor)
 {	
@@ -34,9 +34,9 @@ kernel void smooth(
 }
 
 kernel void smooth_coalescence(
-	global float4 * restrict vertex4_array,
-	global unsigned int * restrict adjs_array,
-	global unsigned int * restrict adjsCounter,
+	global const float4 * restrict vertex4_array,
+	global const unsigned int * restrict adjs_array,
+	global const unsigned int * restrict adjsCounter,
 	global float4 * restrict result_vertex4_array,
 	unsigned int nels, float factor)
 {	
