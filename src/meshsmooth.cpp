@@ -252,6 +252,8 @@ public:
 
 
 	Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj, const bool orderedAdjsDiscoverInsert, const bool sortVertexArray, const bool sortAdjsCoalescent){
+		nels = nadjs = minAdjsCount = maxAdjsCount = 0;
+		meanAdjsCount = 0.0f;
 		this->OCLenv = OCLenv;
 		this->obj = obj;
 		this->orderedAdjsDiscoverInsert = orderedAdjsDiscoverInsert;
