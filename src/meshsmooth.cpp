@@ -15,8 +15,10 @@
 #define OCL_FILENAME "src/meshsmooth.ocl"
 
 #define ORDERED_ADJS_DISCOVER_INSERT 1
-#define SORT_VERTEX_ARRAY 1
-#define SORT_ADJS_COALESCENT 1
+#define SORT_VERTEX_ARRAY 0
+#define KERNEL_COAL 0 & SORT_VERTEX_ARRAY
+#define SORT_ADJS_COALESCENT 0 & KERNEL_COAL// requires SORT_VERTEX_ARRAY 1
+#define KERNEL_LMEM 0 & SORT_VERTEX_ARRAY // requires SORT_VERTEX_ARRAY 1
 
 #define WRESTLERS "res/wrestlers.obj"
 #define SUZANNE "res/suzanne.obj"
@@ -215,7 +217,9 @@ class Smoothing {
 private:
 	bool orderedAdjsDiscoverInsert;
 	bool sortVertexArray;
+	bool kernelCoal;
 	bool sortAdjsCoalescent;
+	bool kernelLmem;
 	
 	uint nels, nadjs, minAdjsCount, maxAdjsCount;
 	float meanAdjsCount;
@@ -249,16 +253,19 @@ public:
 
 	uint countingSize;
 	uint* adjCounter;
-
-
-	Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj, const bool orderedAdjsDiscoverInsert, const bool sortVertexArray, const bool sortAdjsCoalescent){
+	
+	Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj,
+	const bool orderedAdjsDiscoverInsert, const bool sortVertexArray, const bool kernelCoal, const bool sortAdjsCoalescent, const bool kernelLmem
+	){
 		nels = nadjs = minAdjsCount = maxAdjsCount = 0;
 		meanAdjsCount = 0.0f;
 		this->OCLenv = OCLenv;
 		this->obj = obj;
 		this->orderedAdjsDiscoverInsert = orderedAdjsDiscoverInsert;
 		this->sortVertexArray = sortVertexArray;
+		this->kernelCoal = kernelCoal;
 		this->sortAdjsCoalescent = sortAdjsCoalescent;
+		this->kernelLmem = kernelLmem;
 		init();
 	}
 	
@@ -434,23 +441,26 @@ public:
 		printElapsedTime_ms("fillVertexAdjsArray", ELAPSED_TIME);
 	}
 	
-	void fillOrderedVertexAdjsArray(vertex_struct** orderedVertex_arrayStruct) {
+	void fillOrderedVertexAdjsArray(vertex_struct** orderedVertex_arrayStruct, const bool kernelCoal) {
 		INIT_TIMER;
 		START_TIMER;
 		uint adjsIndex = 0;
-		for(int i=0; i<maxAdjsCount; i++)
-			for(int j=0; j<nels; j++){
-				vertex_struct * currVertex = orderedVertex_arrayStruct[j];
-				if( currVertex->adjsCount >= i+1 )
-					adjs_array[adjsIndex++] = currVertex->adjs[i]->currentIndex;
-			}
 		
-		/* non coalescence access (change kernel adjs access)
-		for(int i=0; i<nels; i++) {
-			vertex_struct * currVertex = orderedVertex_arrayStruct[i];
-			for( vertex_struct* adj : currVertex->adjs)
-				adjs_array[adjsIndex++] = adj->currentIndex;
-		}*/
+		if(kernelCoal) {
+			for(int i=0; i<maxAdjsCount; i++)
+				for(int j=0; j<nels; j++){
+					vertex_struct * currVertex = orderedVertex_arrayStruct[j];
+					if( currVertex->adjsCount >= i+1 )
+						adjs_array[adjsIndex++] = currVertex->adjs[i]->currentIndex;
+				}
+		}
+		else { //TO-DO non coalescence access (change kernel adjs access)
+			for(int i=0; i<nels; i++) {
+				vertex_struct * currVertex = orderedVertex_arrayStruct[i];
+				for( vertex_struct* adj : currVertex->adjs)
+					adjs_array[adjsIndex++] = adj->currentIndex;
+			}
+		}
 		printElapsedTime_ms("fillOrderedVertexAdjsArray", ELAPSED_TIME);
 	}
 	
@@ -476,12 +486,12 @@ public:
 
 		vertex4_array = new float[4*nels];
 
-		if(sortVertexArray) fillOrderedVertex4Array(vertex4_array, orderedVertex_arrayStruct);
+		if(kernelCoal) fillOrderedVertex4Array(vertex4_array, orderedVertex_arrayStruct);
 		else fillVertex4Array(vertex4_array);
 		
 		adjs_array = new uint[nadjs];
 		
-		if(sortVertexArray) fillOrderedVertexAdjsArray(orderedVertex_arrayStruct);
+		if(sortVertexArray) fillOrderedVertexAdjsArray(orderedVertex_arrayStruct, kernelCoal);
 		else fillVertexAdjsArray();
 		
 		meanAdjsCount = nadjs/(float)nels;
@@ -516,32 +526,38 @@ public:
 		cl_mem cl_vertex4_array = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertex4_array, &err);
 		cl_mem cl_adjs_array = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, ajdsmemsize, adjs_array, &err);
 		cl_mem cl_result_vertex4_array = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE, memsize, NULL, &err);
-		cl_mem cl_adjsCounter = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, maxAdjsCount*sizeof(uint), adjCounter, &err);
-
+		cl_mem cl_adjsCounter;
+		if(kernelCoal) cl_adjsCounter = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, maxAdjsCount*sizeof(uint), adjCounter, &err);
+		
 		// Extract kernels
 		cl_kernel smooth_k;
-		if(sortVertexArray)
-			smooth_k = clCreateKernel(OCLenv->program, "smooth_coalescence", &err);
-		else
-			smooth_k = clCreateKernel(OCLenv->program, "smooth", &err);
+		if(kernelLmem) smooth_k = clCreateKernel(OCLenv->program, "smooth_coalescence_lmem", &err);
+		else if(kernelCoal) smooth_k = clCreateKernel(OCLenv->program, "smooth_coalescence", &err);
+		else smooth_k = clCreateKernel(OCLenv->program, "smooth", &err);
 		
 		ocl_check(err, "create kernel smooth");
 
 		// Set preferred_wg size from device info
 		err = clGetKernelWorkGroupInfo(smooth_k, OCLenv->deviceID, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(preferred_wg_smooth), &preferred_wg_smooth, NULL);
 		
-		
 		printf("====== KERNEL LAUNCH =======\n");
 		INIT_TIMER;
 		START_TIMER;
 		
 		cl_event smooth_evt, smooth_evt2;
-		if(sortVertexArray) {
+		if(kernelLmem) {
+			for(int iter=0; iter<iterations; iter++) {
+				smooth_evt = smooth_coalescence_lmem(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
+				smooth_evt2 = smooth_coalescence_lmem(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_vertex4_array, nels, mi, 1, &smooth_evt);
+			}
+		}
+		else if(kernelCoal) {
 			for(int iter=0; iter<iterations; iter++) {
 				smooth_evt = smooth_coalescence(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
 				smooth_evt2 = smooth_coalescence(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_vertex4_array, nels, mi, 1, &smooth_evt);
 			}
-		} else {
+		}
+		else {
 			for(int iter=0; iter<iterations; iter++) {
 				smooth_evt = smooth(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
 				smooth_evt2 = smooth(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_vertex4_array, nels, mi, 1, &smooth_evt);
@@ -573,13 +589,17 @@ public:
 			obj->vertex_vector[i].z = result_vertex4_array[i*4+2];
 		}
 		
-		if(sortVertexArray) {
+		if(kernelLmem) {
+			printf(" (ignore bandwidth) coal_lmem smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
+			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
+		}
+		else if(kernelCoal) {
+			printf(" coal smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
+			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int) + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
+		}
+		else{
 			printf(" smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
-				(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int) + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
-			
-		} else {
-			printf(" smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
-				(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
+			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
 		}
 		
 		printf(" copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt), (2.0*memsize)/runtime_ns(copy_evt));
@@ -644,6 +664,41 @@ public:
 			&smooth_evt);
 		ocl_check(err, "enqueue kernel smooth");
 		return smooth_evt;
+	}
+	
+	cl_event smooth_coalescence_lmem(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_adjsCounter, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
+
+		size_t lws[] = { 64 };
+		size_t gws[] = { round_mul_up(nels, 64) };
+		cl_event smooth_evt;
+		cl_int err;
+
+		//printf("smooth gws: %d | %zu => %zu\n", nels, preferred_wg_smooth, gws[0]);
+
+		// Setting arguments
+		err = clSetKernelArg(smooth_k, 0, sizeof(cl_vertex4_array), &cl_vertex4_array);
+		ocl_check(err, "coal set smooth arg 0");
+		err = clSetKernelArg(smooth_k, 1, sizeof(cl_adjs_array), &cl_adjs_array);
+		ocl_check(err, "coal set smooth arg 1");
+		err = clSetKernelArg(smooth_k, 2, sizeof(cl_adjsCounter), &cl_adjsCounter);
+		ocl_check(err, "coal set smooth arg 2");
+		err = clSetKernelArg(smooth_k, 3, maxAdjsCount*sizeof(cl_uint), NULL);
+		ocl_check(err, "coal set smooth arg 3");
+		err = clSetKernelArg(smooth_k, 4, sizeof(cl_uint), &maxAdjsCount);
+		ocl_check(err, "coal set smooth arg 4");
+		err = clSetKernelArg(smooth_k, 5, sizeof(cl_result_vertex4_array), &cl_result_vertex4_array);
+		ocl_check(err, "coal set smooth arg 5");
+		err = clSetKernelArg(smooth_k, 6, sizeof(nels), &nels);
+		ocl_check(err, "coal set smooth arg 6");
+		err = clSetKernelArg(smooth_k, 7, sizeof(factor), &factor);
+		ocl_check(err, "coal set smooth arg 7");
+
+		err = clEnqueueNDRangeKernel(queue, smooth_k,
+			1, NULL, gws, lws, /* griglia di lancio */
+			waintingSize, waintingSize==0?NULL:waitingList, /* waiting list */
+			&smooth_evt);
+		ocl_check(err, "enqueue kernel smooth");
+		return smooth_evt;
 	}	
 };
 
@@ -656,7 +711,7 @@ int main(const int argc, const char *argv[]) {
 	OpenCLEnvironment *OCLenv = new OpenCLEnvironment(OCL_PLATFORM, OCL_DEVICE, OCL_FILENAME);
 
 	OBJ *obj = new OBJ(IN_MESH);
-	Smoothing smoothing(OCLenv, obj, ORDERED_ADJS_DISCOVER_INSERT, SORT_VERTEX_ARRAY, SORT_ADJS_COALESCENT);
+	Smoothing smoothing(OCLenv, obj, ORDERED_ADJS_DISCOVER_INSERT, SORT_VERTEX_ARRAY, KERNEL_COAL, SORT_ADJS_COALESCENT, KERNEL_LMEM);
 
 	smoothing.execute(iterations, lambda, mi);
 	
