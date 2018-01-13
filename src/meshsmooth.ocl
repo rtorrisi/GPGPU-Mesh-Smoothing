@@ -7,6 +7,7 @@ kernel void smooth(
 	global float4 * restrict result_vertex4_array,
 	unsigned int nels, float factor)
 {	
+
 	unsigned int i = get_global_id(0);
 	if(i >= nels) return;
 	
@@ -31,6 +32,47 @@ kernel void smooth(
 	res.w = lastComponent;
 	result_vertex4_array[i] = res;
 	//if(i<10) printf("result vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, res.x, res.y, res.z, adjsIndexOffset, adjsCount);
+}
+
+kernel void smooth_lmem(
+	global const float4 * restrict vertex4_array,
+	local float4 * restrict local_vertex4_array,
+	global const unsigned int * restrict adjs_array,
+	global float4 * restrict result_vertex4_array,
+	unsigned int nels, float factor)
+{	
+	const unsigned int i = get_global_id(0);
+	
+	if(i >= nels) return;
+	
+	const unsigned int li = get_local_id(0);
+	const unsigned int gi = get_group_id(0);
+	
+	float4 vertex = vertex4_array[i];
+	local_vertex4_array[li] = vertex;
+	
+	barrier(CLK_LOCAL_MEM_FENCE);
+	
+	float lastComponent = vertex.w;
+	
+	unsigned int adjsInfo = *(unsigned int *)&lastComponent;
+	unsigned int adjsIndexOffset = adjsInfo>>COUNT_BITS;
+	unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
+	
+	float4 adj, umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
+	unsigned int adj_index;
+	for(int adjIndex=0; adjIndex<adjsCount; adjIndex++)
+	{
+		adj_index = adjsIndexOffset+adjIndex;
+		if(adj_index > i-1 && adj_index < i+get_local_size(0)+1) adj = local_vertex4_array[adj_index - i]; //read from local memory
+		else adj = vertex4_array[adj_index]; //read from global memory
+		
+		umbrellaOperator += ( adj-vertex );
+	}
+	umbrellaOperator /= adjsCount;
+	float4 res = vertex + factor*umbrellaOperator;
+	res.w = lastComponent;
+	result_vertex4_array[i] = res;
 }
 
 kernel void smooth_coalescence(
@@ -80,7 +122,6 @@ kernel void smooth_coalescence_lmem(
 	if(li<adjsCounter_array_dim) local_adjsCounter_array[li] = adjsCounter_array[li];
 	if(i >= nels) return;
 	barrier(CLK_LOCAL_MEM_FENCE);
-	
 	
 	float4 vertex = vertex4_array[i];
 	float lastComponent = vertex.w;
