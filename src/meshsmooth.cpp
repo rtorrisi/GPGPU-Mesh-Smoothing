@@ -23,7 +23,7 @@
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
 
-#define IN_MESH CUBE
+#define IN_MESH WRESTLERS
 #define OUT_MESH "res/out.obj"
 
 #define INIT_TIMER auto start_time = std::chrono::high_resolution_clock::now()
@@ -303,16 +303,7 @@ public:
 			}
 		}
 		
-		if(orderedInsert) printf("### adjs insert ordered\n");
-		
-		for(int i=0; i<nels;i++) {
-			
-			for(uint v : obj_adjacents_arrayVector[i]) {
-				printf(" -> %d ", v);
-			}
-			printf("\n");
-		}
-		
+		if(orderedInsert) printf("### adjs insert ordered\n");		
 		return adjsCount;
 	}
 
@@ -529,14 +520,6 @@ public:
 			fillVertexAdjsArray();
 		}
 	
-		printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
-		
-		for(int i=0; i<nels; i++) printf(" %f %f %f\n", vertex4_array[i*4], vertex4_array[i*4+1], vertex4_array[i*4+2]);
-		printf("\n");
-		for(int i=0; i<nadjs; i++) printf(" %d, ", adjs_array[i]);
-		
-		printf("\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
-	
 		printf(" > Data initialized!\n");
 		printf("============================\n\n");
 	}
@@ -685,8 +668,8 @@ public:
 	}
 	
 	cl_event smooth_lmem(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
-		size_t lws[] = { 64 };
-		size_t gws[] = { round_mul_up(nels, 64) };
+		size_t lws[] = { 16 };
+		size_t gws[] = { round_mul_up(nels, 16) };
 		cl_event smooth_evt;
 		cl_int err;
 
@@ -745,8 +728,8 @@ public:
 	
 	cl_event smooth_coalescence_lmem(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_adjsCounter, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
 
-		size_t lws[] = { 64 };
-		size_t gws[] = { round_mul_up(nels, 64) };
+		size_t lws[] = { 16 };
+		size_t gws[] = { round_mul_up(nels, 16) };
 		cl_event smooth_evt;
 		cl_int err;
 
@@ -790,7 +773,7 @@ int main(const int argc, const char *argv[]) {
 	OBJ *obj = new OBJ(IN_MESH);
 	
 	//OptNoOption | OptSortVertex | OptSortAdjs | OptCoalescence | OptLocalMemory
-	Smoothing smoothing(OCLenv, obj, OptSortAdjs | OptCoalescence);
+	Smoothing smoothing(OCLenv, obj, OptLocalMemory );
 
 	smoothing.execute(iterations, lambda, mi);
 	
