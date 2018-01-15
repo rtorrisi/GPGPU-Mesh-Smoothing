@@ -18,7 +18,10 @@ $(SRC)/ocl_boiler.o: $(SRC)/ocl_boiler.cpp
 
 
 execute:$(PROG).exe
-	$(PROG).exe 
+	$(PROG).exe
+
+run:$(PROG).exe
+	$(PROG).exe
 
 clean:
 	del $(SRC)\*.o *.exe

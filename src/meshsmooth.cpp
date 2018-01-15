@@ -10,7 +10,7 @@
 #include <algorithm>
 #include<chrono>
 
-#define OCL_PLATFORM 0
+#define OCL_PLATFORM 1
 #define OCL_DEVICE 0
 #define OCL_FILENAME "src/meshsmooth.ocl"
 
@@ -23,7 +23,7 @@
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
 
-#define IN_MESH WRESTLERS
+#define IN_MESH SUZANNE
 #define OUT_MESH "res/out.obj"
 
 #define INIT_TIMER auto start_time = std::chrono::high_resolution_clock::now()
@@ -668,8 +668,8 @@ public:
 	}
 	
 	cl_event smooth_lmem(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
-		size_t lws[] = { 16 };
-		size_t gws[] = { round_mul_up(nels, 16) };
+		size_t lws[] = { 64 };
+		size_t gws[] = { round_mul_up(nels, 64) };
 		cl_event smooth_evt;
 		cl_int err;
 
@@ -773,7 +773,7 @@ int main(const int argc, const char *argv[]) {
 	OBJ *obj = new OBJ(IN_MESH);
 	
 	//OptNoOption | OptSortVertex | OptSortAdjs | OptCoalescence | OptLocalMemory
-	Smoothing smoothing(OCLenv, obj, OptLocalMemory );
+	Smoothing smoothing(OCLenv, obj, OptSortVertex | OptSortAdjs | OptCoalescence );
 
 	smoothing.execute(iterations, lambda, mi);
 	

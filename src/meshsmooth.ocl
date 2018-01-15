@@ -50,14 +50,14 @@ kernel void smooth_lmem(
 	float4 vertex = vertex4_array[i];
 	local_vertex4_array[li] = vertex;
 	barrier(CLK_LOCAL_MEM_FENCE);
-	
+
+
 	float lastComponent = vertex.w;
 	unsigned int adjsInfo = *(unsigned int *)&lastComponent;
 	unsigned int adjsIndexOffset = adjsInfo>>COUNT_BITS;
 	unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
 	
-	//printf("vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, vertex.x, vertex.y, vertex.z, adjsIndexOffset, adjsCount);
-	
+
 	float4 current_adj, umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
 	unsigned int adj_index;
 	int local_Adjindex;
@@ -66,15 +66,12 @@ kernel void smooth_lmem(
 		adj_index = adjs_array[adjsIndexOffset+adjIndex];
 		local_Adjindex = adj_index - gi*ls;
 		
-		if(local_Adjindex >= 0 &&  local_Adjindex <= ls) {
+		if(local_Adjindex >= 0 &&  local_Adjindex < ls) {
 			current_adj = local_vertex4_array[local_Adjindex]; //read from local memory
-			//printf("local - adj index[%d] %d^o adj of vertex %d -> %f / %f / %f\n", adj_index, adjIndex+1, i, current_adj.x, current_adj.y, current_adj.z);
 		}
 		else{
 			current_adj = vertex4_array[adj_index]; //read from global memory
-			//printf("global - adj index[%d] %d^o adj of vertex %d -> %f / %f / %f\n", adj_index, adjIndex+1, i, current_adj.x, current_adj.y, current_adj.z);
 		}
-		
 		
 		umbrellaOperator += (current_adj - vertex);
 	}
