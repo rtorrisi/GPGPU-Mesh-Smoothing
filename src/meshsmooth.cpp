@@ -14,12 +14,6 @@
 #define OCL_DEVICE 0
 #define OCL_FILENAME "src/meshsmooth.ocl"
 
-#define ORDERED_ADJS_DISCOVER_INSERT 1
-#define SORT_VERTEX_ARRAY 1
-#define KERNEL_COAL 1 & SORT_VERTEX_ARRAY
-#define SORT_ADJS_COALESCENT 1 & SORT_VERTEX_ARRAY// requires SORT_VERTEX_ARRAY 1
-#define KERNEL_LMEM 1 & SORT_VERTEX_ARRAY // requires SORT_VERTEX_ARRAY 1
-
 #define WRESTLERS "res/wrestlers.obj"
 #define SUZANNE "res/suzanne.obj"
 #define EGYPT "res/egypt.obj"
@@ -29,7 +23,7 @@
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
 
-#define IN_MESH WRESTLERS
+#define IN_MESH CUBE
 #define OUT_MESH "res/out.obj"
 
 #define INIT_TIMER auto start_time = std::chrono::high_resolution_clock::now()
@@ -39,6 +33,23 @@
 typedef unsigned int uint;
 size_t preferred_wg_smooth;
 
+enum Options {
+	OptNoOption    = 0x00,
+	OptSortVertex  = 0x01,
+	OptSortAdjs    = 0x02,
+	OptCoalescence = 0x04,
+	OptLocalMemory = 0x08
+};
+/*
+ 0x01 ==   1 == "00000001"
+ 0x02 ==   2 == "00000010"
+ 0x04 ==   4 == "00000100"
+ 0x08 ==   8 == "00001000"
+ 0x10 ==  16 == "00010000"
+ 0x20 ==  32 == "00100000"
+ 0x40 ==  64 == "01000000"
+ 0x80 == 128 == "10000000"
+*/
 void printElapsedTime_ms(const char * str, const unsigned long long int microseconds) {
 	if(microseconds==0) printf(" %s : < 15ms\n", str);
 	else printf(" %s : %gms\n", str, microseconds/(double)1000);
@@ -215,11 +226,7 @@ public:
 
 class Smoothing {
 private:
-	bool orderedAdjsDiscoverInsert;
-	bool sortVertexArray;
-	bool kernelCoal;
-	bool sortAdjsCoalescent;
-	bool kernelLmem;
+	bool sortVertex, sortAdjs, coalescence, localMemory;
 	
 	uint nels, nadjs, minAdjsCount, maxAdjsCount;
 	float meanAdjsCount;
@@ -254,22 +261,28 @@ public:
 	uint countingSize;
 	uint* adjCounter;
 	
-	Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj,
-	const bool orderedAdjsDiscoverInsert, const bool sortVertexArray, const bool kernelCoal, const bool sortAdjsCoalescent, const bool kernelLmem
-	){
-		nels = nadjs = minAdjsCount = maxAdjsCount = 0;
-		meanAdjsCount = 0.0f;
+	void parseBitFlags(const unsigned char flagsOpt) {				
+		coalescence = ( flagsOpt & OptCoalescence );
+		localMemory = ( flagsOpt & OptLocalMemory );
+		// coalescence access requires sortVertex = true
+		sortVertex  = ( flagsOpt & OptSortVertex ) || coalescence;
+		sortAdjs    = ( flagsOpt & OptSortAdjs );
+		
+		printf(" -> sortVertex %d <-\n", sortVertex);
+		printf(" -> sortAdjs %d <-\n", sortAdjs);
+		printf(" -> coalescence %d <-\n", coalescence);
+		printf(" -> localMemory %d <-\n", localMemory);
+	}
+	
+	Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj, const unsigned char flagsOpt){
 		this->OCLenv = OCLenv;
 		this->obj = obj;
-		this->orderedAdjsDiscoverInsert = orderedAdjsDiscoverInsert;
-		this->sortVertexArray = sortVertexArray;
-		this->kernelCoal = kernelCoal;
-		this->sortAdjsCoalescent = sortAdjsCoalescent;
-		this->kernelLmem = kernelLmem;
+		parseBitFlags(flagsOpt);
 		init();
 	}
 	
-	void discoverAdjacents(const bool orderedInsert){
+	unsigned int discoverAdjacents(const bool orderedInsert){
+		unsigned int adjsCount = 0;
 		// Discover adjacents vertex for each vertex
 		obj_adjacents_arrayVector = new std::vector< uint >[nels];
 
@@ -282,22 +295,34 @@ public:
 			std::vector< uint >* adjacent2 = &obj_adjacents_arrayVector[vertexID2];
 			std::vector< uint >* adjacent3 = &obj_adjacents_arrayVector[vertexID3];
 			
-			if(orderedInsert){
-				if(orderedUniqueInsert(adjacent1, vertexID2)) nadjs++;
-				if(orderedUniqueInsert(adjacent1, vertexID3)) nadjs++;
-				if(orderedUniqueInsert(adjacent2, vertexID1)) nadjs++;
-				if(orderedUniqueInsert(adjacent2, vertexID3)) nadjs++;
-				if(orderedUniqueInsert(adjacent3, vertexID1)) nadjs++;
-				if(orderedUniqueInsert(adjacent3, vertexID2)) nadjs++;
+			if(orderedInsert && !sortVertex){
+				if(orderedUniqueInsert(adjacent1, vertexID2)) adjsCount++;
+				if(orderedUniqueInsert(adjacent1, vertexID3)) adjsCount++;
+				if(orderedUniqueInsert(adjacent2, vertexID1)) adjsCount++;
+				if(orderedUniqueInsert(adjacent2, vertexID3)) adjsCount++;
+				if(orderedUniqueInsert(adjacent3, vertexID1)) adjsCount++;
+				if(orderedUniqueInsert(adjacent3, vertexID2)) adjsCount++;
 			} else {
-				if (std::find(adjacent1->begin(), adjacent1->end(), vertexID2) == adjacent1->end()) { adjacent1->push_back(vertexID2); nadjs++; }
-				if (std::find(adjacent1->begin(), adjacent1->end(), vertexID3) == adjacent1->end()) { adjacent1->push_back(vertexID3); nadjs++; }
-				if (std::find(adjacent2->begin(), adjacent2->end(), vertexID1) == adjacent2->end()) { adjacent2->push_back(vertexID1); nadjs++; }
-				if (std::find(adjacent2->begin(), adjacent2->end(), vertexID3) == adjacent2->end()) { adjacent2->push_back(vertexID3); nadjs++; }
-				if (std::find(adjacent3->begin(), adjacent3->end(), vertexID1) == adjacent3->end()) { adjacent3->push_back(vertexID1); nadjs++; }
-				if (std::find(adjacent3->begin(), adjacent3->end(), vertexID2) == adjacent3->end()) { adjacent3->push_back(vertexID2); nadjs++; }
+				if (std::find(adjacent1->begin(), adjacent1->end(), vertexID2) == adjacent1->end()) { adjacent1->push_back(vertexID2); adjsCount++; }
+				if (std::find(adjacent1->begin(), adjacent1->end(), vertexID3) == adjacent1->end()) { adjacent1->push_back(vertexID3); adjsCount++; }
+				if (std::find(adjacent2->begin(), adjacent2->end(), vertexID1) == adjacent2->end()) { adjacent2->push_back(vertexID1); adjsCount++; }
+				if (std::find(adjacent2->begin(), adjacent2->end(), vertexID3) == adjacent2->end()) { adjacent2->push_back(vertexID3); adjsCount++; }
+				if (std::find(adjacent3->begin(), adjacent3->end(), vertexID1) == adjacent3->end()) { adjacent3->push_back(vertexID1); adjsCount++; }
+				if (std::find(adjacent3->begin(), adjacent3->end(), vertexID2) == adjacent3->end()) { adjacent3->push_back(vertexID2); adjsCount++; }
 			}
 		}
+		
+		if(orderedInsert) printf("### adjs insert ordered\n");
+		
+		for(int i=0; i<nels;i++) {
+			
+			for(uint v : obj_adjacents_arrayVector[i]) {
+				printf(" -> %d ", v);
+			}
+			printf("\n");
+		}
+		
+		return adjsCount;
 	}
 
 	void calcMinMaxAdjCount() {
@@ -310,7 +335,7 @@ public:
 		}
 	}
 
-	vertex_struct** orderVertexByAdjCount(const bool sortAdjsCoalescent) {
+	vertex_struct** orderVertexByAdjCount(const bool sortAdjs) {
 		
 		// vertex_arrayStruct creation
 		vertex_struct** vertex_arrayStruct = new vertex_struct* [nels];
@@ -381,8 +406,9 @@ public:
 			}
 		}
 
-
-		if(sortAdjsCoalescent) {
+		printf("### vertex array ordered\n");
+		
+		if(sortAdjs) {
 			for(int i=0; i<nels; i++) {
 				vertex_struct * currVertex = orderedVertex_arrayStruct[i];
 				std::vector<vertex_struct*> * v = &(currVertex->adjs);
@@ -390,6 +416,7 @@ public:
 				std::sort(v->begin(), v->end(), vertex_struct_cmp);
 			}
 		}
+		if(sortAdjs) printf("### adjs array ordered\n");
 		return orderedVertex_arrayStruct;
 		
 	}
@@ -441,12 +468,12 @@ public:
 		printElapsedTime_ms("fillVertexAdjsArray", ELAPSED_TIME);
 	}
 	
-	void fillOrderedVertexAdjsArray(vertex_struct** orderedVertex_arrayStruct, const bool kernelCoal) {
+	void fillOrderedVertexAdjsArray(vertex_struct** orderedVertex_arrayStruct, const bool coalescence) {
 		INIT_TIMER;
 		START_TIMER;
 		uint adjsIndex = 0;
 		
-		if(kernelCoal) {
+		if(coalescence) {
 			for(int i=0; i<maxAdjsCount; i++)
 				for(int j=0; j<nels; j++){
 					vertex_struct * currVertex = orderedVertex_arrayStruct[j];
@@ -457,55 +484,59 @@ public:
 		else { //TO-DO non coalescence access (change kernel adjs access)
 			for(int i=0; i<nels; i++) {
 				vertex_struct * currVertex = orderedVertex_arrayStruct[i];
-				for( vertex_struct* adj : currVertex->adjs)
+				printf("<---> %d \n", currVertex->currentIndex);
+				for( vertex_struct* adj : currVertex->adjs) {
 					adjs_array[adjsIndex++] = adj->currentIndex;
+					printf("<> %d -> ", adj->currentIndex);
+				}
+				printf("\n");
 			}
 		}
+		if(coalescence) printf("### adjs filled to coalescence\n");
 		printElapsedTime_ms("fillOrderedVertexAdjsArray", ELAPSED_TIME);
 	}
 	
 	void init(){
-
 		printf("=======  INIT DATA =======\n");
 		printf(" > Initializing data...\n");
-
+		
+		nels = nadjs = minAdjsCount = maxAdjsCount = 0;
+		meanAdjsCount = 0.0f;
+		
 		if(obj == nullptr || !obj->hasValidData()) {
 			printf("Smoothing(OBJ) -> obj null or invalid data");
 			return;
 		}
-
-		// Init number of vertex
-		nels = obj->getVerticesCount();
-
-		discoverAdjacents(orderedAdjsDiscoverInsert);
+	
+		nels          = obj->getVerticesCount();
+		nadjs         = discoverAdjacents(sortAdjs);
+		meanAdjsCount = nadjs/(float)nels;
+		//-----------------------------------
+		vertex4_array = new float[4*nels];
+		adjs_array    = new uint[nadjs];
+		//-----------------------------------
+		memsize       = 4*nels*sizeof(float);
+		ajdsmemsize   =  nadjs*sizeof(uint);
 		
 		calcMinMaxAdjCount();
 
-		vertex_struct** orderedVertex_arrayStruct;
-		if(sortVertexArray) orderedVertex_arrayStruct = orderVertexByAdjCount(sortAdjsCoalescent);
-
-		vertex4_array = new float[4*nels];
-
-		if(kernelCoal) fillOrderedVertex4Array(vertex4_array, orderedVertex_arrayStruct);
-		else fillVertex4Array(vertex4_array);
-		
-		adjs_array = new uint[nadjs];
-		
-		if(sortVertexArray) fillOrderedVertexAdjsArray(orderedVertex_arrayStruct, kernelCoal);
-		else fillVertexAdjsArray();
-		
-		meanAdjsCount = nadjs/(float)nels;
-		memsize = 4*nels*sizeof(float);
-		ajdsmemsize = nadjs*sizeof(uint);
-
+		if(sortVertex) {
+			vertex_struct** orderedVertex_arrayStruct;
+			orderedVertex_arrayStruct = orderVertexByAdjCount(sortAdjs);
+			fillOrderedVertex4Array(vertex4_array, orderedVertex_arrayStruct);
+			fillOrderedVertexAdjsArray(orderedVertex_arrayStruct, coalescence);
+		}
+		else {
+			fillVertex4Array(vertex4_array);
+			fillVertexAdjsArray();
+		}
+	
 		printf(" > Data initialized!\n");
 		printf("============================\n\n");
 	}
 
 	void execute(uint iterations, float lambda, float mi){
 
-		float *result_vertex4_array;
-		
 		printf("====== SMOOTHING INFO ======\n");
 		std::cout << " # Iterations: " << iterations << std::endl;
 		std::cout << " Lambda factor: " << lambda << std::endl;
@@ -527,14 +558,14 @@ public:
 		cl_mem cl_adjs_array = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, ajdsmemsize, adjs_array, &err);
 		cl_mem cl_result_vertex4_array = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE, memsize, NULL, &err);
 		cl_mem cl_adjsCounter;
-		if(kernelCoal) cl_adjsCounter = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, maxAdjsCount*sizeof(uint), adjCounter, &err);
+		if(coalescence) cl_adjsCounter = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, maxAdjsCount*sizeof(uint), adjCounter, &err);
 		
 		// Extract kernels
 		cl_kernel smooth_k;
-		if(kernelLmem) smooth_k = clCreateKernel(OCLenv->program, "smooth_coalescence_lmem", &err);
-		else if(kernelCoal) smooth_k = clCreateKernel(OCLenv->program, "smooth_coalescence", &err);
+		if(coalescence && localMemory) smooth_k = clCreateKernel(OCLenv->program, "smooth_coalescence_lmem", &err);
+		else if(coalescence) smooth_k = clCreateKernel(OCLenv->program, "smooth_coalescence", &err);
+		else if(localMemory) smooth_k = clCreateKernel(OCLenv->program, "smooth_lmem", &err);
 		else smooth_k = clCreateKernel(OCLenv->program, "smooth", &err);
-		
 		ocl_check(err, "create kernel smooth");
 
 		// Set preferred_wg size from device info
@@ -545,16 +576,22 @@ public:
 		START_TIMER;
 		
 		cl_event smooth_evt, smooth_evt2;
-		if(kernelLmem) {
+		if(coalescence && localMemory) {
 			for(int iter=0; iter<iterations; iter++) {
 				smooth_evt = smooth_coalescence_lmem(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
 				smooth_evt2 = smooth_coalescence_lmem(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_vertex4_array, nels, mi, 1, &smooth_evt);
 			}
 		}
-		else if(kernelCoal) {
+		else if(coalescence) {
 			for(int iter=0; iter<iterations; iter++) {
 				smooth_evt = smooth_coalescence(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
 				smooth_evt2 = smooth_coalescence(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_vertex4_array, nels, mi, 1, &smooth_evt);
+			}
+		}
+		else if(localMemory) {
+			for(int iter=0; iter<iterations; iter++) {
+				smooth_evt = smooth_lmem(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
+				smooth_evt2 = smooth_lmem(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_vertex4_array, nels, mi, 1, &smooth_evt);
 			}
 		}
 		else {
@@ -569,7 +606,7 @@ public:
 		const unsigned long long int elapsedTime = ELAPSED_TIME;
 		
 		// Copy result
-		result_vertex4_array = new float[4*nels];
+		float *result_vertex4_array = new float[4*nels];
 		if (!result_vertex4_array) printf("error res\n");
 
 		cl_event copy_evt;
@@ -589,13 +626,17 @@ public:
 			obj->vertex_vector[i].z = result_vertex4_array[i*4+2];
 		}
 		
-		if(kernelLmem) {
-			printf(" (ignore bandwidth) coal_lmem smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
+		if(coalescence && localMemory) {
+			printf(" coal lmem smooth time:\t%gms\t%gGB/s (ignore bandwidth) \n", runtime_ms(smooth_evt),
 			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
 		}
-		else if(kernelCoal) {
+		else if(coalescence) {
 			printf(" coal smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
 			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int) + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
+		}
+		else if(localMemory){
+			printf(" lmem smooth time:\t%gms\t%gGB/s (ignore bandwidth) \n", runtime_ms(smooth_evt),
+			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
 		}
 		else{
 			printf(" smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
@@ -631,6 +672,36 @@ public:
 
 		err = clEnqueueNDRangeKernel(queue, smooth_k,
 			1, NULL, gws, NULL, /* griglia di lancio */
+			waintingSize, waintingSize==0?NULL:waitingList, /* waiting list */
+			&smooth_evt);
+		ocl_check(err, "enqueue kernel smooth");
+		return smooth_evt;
+	}
+	
+	cl_event smooth_lmem(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
+		size_t lws[] = { 64 };
+		size_t gws[] = { round_mul_up(nels, 64) };
+		cl_event smooth_evt;
+		cl_int err;
+
+		//printf("smooth gws: %d | %zu => %zu\n", nels, preferred_wg_smooth, gws[0]);
+
+		// Setting arguments
+		err = clSetKernelArg(smooth_k, 0, sizeof(cl_vertex4_array), &cl_vertex4_array);
+		ocl_check(err, "set smooth arg 0");
+		err = clSetKernelArg(smooth_k, 1, lws[0]*sizeof(cl_float4), NULL);
+		ocl_check(err, "set smooth arg 1");
+		err = clSetKernelArg(smooth_k, 2, sizeof(cl_adjs_array), &cl_adjs_array);
+		ocl_check(err, "set smooth arg 2");
+		err = clSetKernelArg(smooth_k, 3, sizeof(cl_result_vertex4_array), &cl_result_vertex4_array);
+		ocl_check(err, "set smooth arg 3");
+		err = clSetKernelArg(smooth_k, 4, sizeof(nels), &nels);
+		ocl_check(err, "set smooth arg 4");
+		err = clSetKernelArg(smooth_k, 5, sizeof(factor), &factor);
+		ocl_check(err, "set smooth arg 5");
+
+		err = clEnqueueNDRangeKernel(queue, smooth_k,
+			1, NULL, gws, lws, /* griglia di lancio */
 			waintingSize, waintingSize==0?NULL:waitingList, /* waiting list */
 			&smooth_evt);
 		ocl_check(err, "enqueue kernel smooth");
@@ -711,7 +782,9 @@ int main(const int argc, const char *argv[]) {
 	OpenCLEnvironment *OCLenv = new OpenCLEnvironment(OCL_PLATFORM, OCL_DEVICE, OCL_FILENAME);
 
 	OBJ *obj = new OBJ(IN_MESH);
-	Smoothing smoothing(OCLenv, obj, ORDERED_ADJS_DISCOVER_INSERT, SORT_VERTEX_ARRAY, KERNEL_COAL, SORT_ADJS_COALESCENT, KERNEL_LMEM);
+	//OptSortVertex | OptSortAdjs | OptCoalescence | OptLocalMemory
+	
+	Smoothing smoothing(OCLenv, obj, OptSortVertex | OptSortAdjs);
 
 	smoothing.execute(iterations, lambda, mi);
 	
