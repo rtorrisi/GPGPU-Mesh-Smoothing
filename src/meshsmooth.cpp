@@ -34,22 +34,13 @@ typedef unsigned int uint;
 size_t preferred_wg_smooth;
 
 enum Options {
-	OptNoOption    = 0x00,
-	OptSortVertex  = 0x01,
-	OptSortAdjs    = 0x02,
-	OptCoalescence = 0x04,
-	OptLocalMemory = 0x08
+	OptNoOption    = 0x00, // 0x01 ==   1 == "00000001"
+	OptSortVertex  = 0x01, // 0x02 ==   2 == "00000010"
+	OptSortAdjs    = 0x02, // 0x04 ==   4 == "00000100"
+	OptCoalescence = 0x04, // 0x08 ==   8 == "00001000"
+	OptLocalMemory = 0x08  // 0x10 ==  16 == "00010000"
 };
-/*
- 0x01 ==   1 == "00000001"
- 0x02 ==   2 == "00000010"
- 0x04 ==   4 == "00000100"
- 0x08 ==   8 == "00001000"
- 0x10 ==  16 == "00010000"
- 0x20 ==  32 == "00100000"
- 0x40 ==  64 == "01000000"
- 0x80 == 128 == "10000000"
-*/
+
 void printElapsedTime_ms(const char * str, const unsigned long long int microseconds) {
 	if(microseconds==0) printf(" %s : < 15ms\n", str);
 	else printf(" %s : %gms\n", str, microseconds/(double)1000);
@@ -442,18 +433,29 @@ public:
 		printElapsedTime_ms("fillVertex4Array", ELAPSED_TIME);
 	}
 	
-	void fillOrderedVertex4Array(float* vertex4_array, vertex_struct** orderedVertex_arrayStruct){
+	void fillOrderedVertex4Array(float* vertex4_array, vertex_struct** orderedVertex_arrayStruct, const bool coalescence){
 		INIT_TIMER;
 		START_TIMER;
+		uint currentAdjStartIndex = 0;
+		
 		for(int i=0; i<nels; i++) {
 			vertex_struct * currVertex = orderedVertex_arrayStruct[i];
+			
 			glm::vec3 vertex = obj->vertex_vector[currVertex->obj_vertex_vector_Index];
 			vertex4_array[4*i] = vertex.x;
 			vertex4_array[4*i+1] = vertex.y;
 			vertex4_array[4*i+2] = vertex.z;
 
+			uint currentAdjsCount = currVertex->adjsCount;
 			uint* adjIndexPtr = (uint*)(&vertex4_array[4*i+3]);
-			*adjIndexPtr = currVertex->adjsCount;			
+			
+			if(coalescence) *adjIndexPtr = currentAdjsCount;
+			else {
+				*adjIndexPtr = ((uint)currentAdjStartIndex)<<6;
+				*adjIndexPtr += (currentAdjsCount<<26)>>26;
+			}
+			
+			currentAdjStartIndex += currentAdjsCount;
 		}
 		printElapsedTime_ms("fillOrderedVertex4Array", ELAPSED_TIME);
 	}
@@ -484,12 +486,8 @@ public:
 		else { //TO-DO non coalescence access (change kernel adjs access)
 			for(int i=0; i<nels; i++) {
 				vertex_struct * currVertex = orderedVertex_arrayStruct[i];
-				printf("<---> %d \n", currVertex->currentIndex);
-				for( vertex_struct* adj : currVertex->adjs) {
+				for( vertex_struct* adj : currVertex->adjs)
 					adjs_array[adjsIndex++] = adj->currentIndex;
-					printf("<> %d -> ", adj->currentIndex);
-				}
-				printf("\n");
 			}
 		}
 		if(coalescence) printf("### adjs filled to coalescence\n");
@@ -523,13 +521,21 @@ public:
 		if(sortVertex) {
 			vertex_struct** orderedVertex_arrayStruct;
 			orderedVertex_arrayStruct = orderVertexByAdjCount(sortAdjs);
-			fillOrderedVertex4Array(vertex4_array, orderedVertex_arrayStruct);
+			fillOrderedVertex4Array(vertex4_array, orderedVertex_arrayStruct, coalescence);
 			fillOrderedVertexAdjsArray(orderedVertex_arrayStruct, coalescence);
 		}
 		else {
 			fillVertex4Array(vertex4_array);
 			fillVertexAdjsArray();
 		}
+	
+		printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
+		
+		for(int i=0; i<nels; i++) printf(" %f %f %f\n", vertex4_array[i*4], vertex4_array[i*4+1], vertex4_array[i*4+2]);
+		printf("\n");
+		for(int i=0; i<nadjs; i++) printf(" %d, ", adjs_array[i]);
+		
+		printf("\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
 	
 		printf(" > Data initialized!\n");
 		printf("============================\n\n");
@@ -782,9 +788,9 @@ int main(const int argc, const char *argv[]) {
 	OpenCLEnvironment *OCLenv = new OpenCLEnvironment(OCL_PLATFORM, OCL_DEVICE, OCL_FILENAME);
 
 	OBJ *obj = new OBJ(IN_MESH);
-	//OptSortVertex | OptSortAdjs | OptCoalescence | OptLocalMemory
 	
-	Smoothing smoothing(OCLenv, obj, OptSortVertex | OptSortAdjs);
+	//OptNoOption | OptSortVertex | OptSortAdjs | OptCoalescence | OptLocalMemory
+	Smoothing smoothing(OCLenv, obj, OptSortAdjs | OptCoalescence);
 
 	smoothing.execute(iterations, lambda, mi);
 	
