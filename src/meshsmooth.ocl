@@ -8,15 +8,15 @@ kernel void smooth(
 	unsigned int nels, float factor)
 {	
 	
-	unsigned int i = get_global_id(0);
+	const unsigned int i = get_global_id(0);
 	if(i >= nels) return;
 	
-	float4 vertex = vertex4_array[i];
+	const float4 vertex = vertex4_array[i];
 	
-	float lastComponent = vertex.w;
-	unsigned int adjsInfo = *(unsigned int *)&lastComponent;
-	unsigned int adjsIndexOffset = adjsInfo>>COUNT_BITS;
-	unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
+	const float lastComponent = vertex.w;
+	const unsigned int adjsInfo = *(unsigned int *)&lastComponent;
+	const unsigned int adjsIndexOffset = adjsInfo>>COUNT_BITS;
+	const unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
 	//printf(" vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, vertex.x, vertex.y, vertex.z, adjsIndexOffset, adjsCount);
 	
 	float4 current_adj, umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
@@ -47,32 +47,32 @@ kernel void smooth_lmem(
 	const unsigned int ls = get_local_size(0);
 	const unsigned int gi = get_group_id(0);
 	
-	float4 vertex = vertex4_array[i];
+	const float4 vertex = vertex4_array[i];
 	local_vertex4_array[li] = vertex;
 	barrier(CLK_LOCAL_MEM_FENCE);
 
 
-	float lastComponent = vertex.w;
-	unsigned int adjsInfo = *(unsigned int *)&lastComponent;
-	unsigned int adjsIndexOffset = adjsInfo>>COUNT_BITS;
-	unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
+	const float lastComponent = vertex.w;
+	const unsigned int adjsInfo = *(unsigned int *)&lastComponent;
+	const unsigned int adjsIndexOffset = adjsInfo>>COUNT_BITS;
+	const unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
 	
 
 	float4 current_adj, umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
 	unsigned int adj_index;
 	int local_Adjindex;
+	int count = 0;
 	for(int adjIndex=0; adjIndex<adjsCount; adjIndex++)
 	{
 		adj_index = adjs_array[adjsIndexOffset+adjIndex];
 		local_Adjindex = adj_index - gi*ls;
 		
-		if(local_Adjindex >= 0 &&  local_Adjindex < ls) {
+		if(local_Adjindex >= 0 &&  local_Adjindex < ls)
 			current_adj = local_vertex4_array[local_Adjindex]; //read from local memory
-		}
 		else{
 			current_adj = vertex4_array[adj_index]; //read from global memory
+			count++;
 		}
-		
 		umbrellaOperator += (current_adj - vertex);
 	}
 	umbrellaOperator /= adjsCount;
@@ -88,12 +88,12 @@ kernel void smooth_coalescence(
 	global float4 * restrict result_vertex4_array,
 	unsigned int nels, float factor)
 {	
-	unsigned int i = get_global_id(0);
+	const unsigned int i = get_global_id(0);
 	if(i >= nels) return;
 	
-	float4 vertex = vertex4_array[i];
-	float lastComponent = vertex.w;
-	unsigned int adjsCount = *(unsigned int *)&lastComponent;
+	const float4 vertex = vertex4_array[i];
+	const float lastComponent = vertex.w;
+	const unsigned int adjsCount = *(unsigned int *)&lastComponent;
 	//printf("vertex %d -> %f / %f / %f   #adj -> %d \n", i, vertex.x, vertex.y, vertex.z, adjsCount);
 
 	float4 current_adj;
@@ -132,9 +132,9 @@ kernel void smooth_coalescence_lmem(
 	barrier(CLK_LOCAL_MEM_FENCE);
 	if(i >= nels) return;
 	
-	float4 vertex = vertex4_array[i];
-	float lastComponent = vertex.w;
-	unsigned int adjsCount = *(unsigned int *)&lastComponent;
+	const float4 vertex = vertex4_array[i];
+	const float lastComponent = vertex.w;
+	const unsigned int adjsCount = *(unsigned int *)&lastComponent;
 	//printf("vertex %d -> %f / %f / %f   #adj -> %d \n", i, vertex.x, vertex.y, vertex.z, adjsCount);
 
 	float4 current_adj;
