@@ -4,11 +4,11 @@
 #include <glm/vec3.hpp>
 #include <glm/vec2.hpp>
 #include <glm/gtx/string_cast.hpp>
-#include <stdio.h>
+#include <cstdio>
 #include <string>
 #include <vector>
 #include <algorithm>
-#include<chrono>
+#include <chrono>
 
 #define OCL_PLATFORM 1
 #define OCL_DEVICE 0
@@ -23,7 +23,7 @@
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
 
-#define IN_MESH SUZANNE
+#define IN_MESH CUBE
 #define OUT_MESH "res/out.obj"
 
 #define INIT_TIMER auto start_time = std::chrono::high_resolution_clock::now()
@@ -92,7 +92,7 @@ private:
 		facesVertexIndex_vector.clear();
 	}
 	bool OBJException(const char * strerror) {
-		printf("Error: %s!\n", strerror);
+		printf(" Error: %s!\n", strerror);
 		return false;
 	}
 	
@@ -224,6 +224,7 @@ private:
 	std::vector< uint >* obj_adjacents_arrayVector;
 	
 	const OpenCLEnvironment* OCLenv;
+	uint localWorkSize;
 	OBJ* obj;
 	
 
@@ -265,8 +266,9 @@ public:
 		printf(" -> localMemory %d <-\n", localMemory);
 	}
 	
-	Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj, const unsigned char flagsOpt){
+	Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj, const unsigned char flagsOpt, const uint lws){
 		this->OCLenv = OCLenv;
+		localWorkSize = lws;
 		this->obj = obj;
 		parseBitFlags(flagsOpt);
 		init();
@@ -493,8 +495,8 @@ public:
 		meanAdjsCount = 0.0f;
 		
 		if(obj == nullptr || !obj->hasValidData()) {
-			printf("Smoothing(OBJ) -> obj null or invalid data");
-			return;
+			printf(" Error: Smoothing(OBJ) -> obj null or invalid data");
+			exit(-1);
 		}
 	
 		nels          = obj->getVerticesCount();
@@ -668,8 +670,8 @@ public:
 	}
 	
 	cl_event smooth_lmem(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
-		size_t lws[] = { 64 };
-		size_t gws[] = { round_mul_up(nels, 64) };
+		size_t lws[] = { localWorkSize };
+		size_t gws[] = { round_mul_up(nels, (localWorkSize!=0)?localWorkSize:preferred_wg_smooth) };
 		cl_event smooth_evt;
 		cl_int err;
 
@@ -690,7 +692,7 @@ public:
 		ocl_check(err, "set smooth arg 5");
 
 		err = clEnqueueNDRangeKernel(queue, smooth_k,
-			1, NULL, gws, lws, /* griglia di lancio */
+			1, NULL, gws, (localWorkSize!=0)?lws:NULL, /* griglia di lancio */
 			waintingSize, waintingSize==0?NULL:waitingList, /* waiting list */
 			&smooth_evt);
 		ocl_check(err, "enqueue kernel smooth");
@@ -728,8 +730,8 @@ public:
 	
 	cl_event smooth_coalescence_lmem(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_adjsCounter, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
 
-		size_t lws[] = { 16 };
-		size_t gws[] = { round_mul_up(nels, 16) };
+		size_t lws[] = { localWorkSize };
+		size_t gws[] = { round_mul_up(nels, (localWorkSize!=0)?localWorkSize:preferred_wg_smooth) };
 		cl_event smooth_evt;
 		cl_int err;
 
@@ -754,7 +756,7 @@ public:
 		ocl_check(err, "coal set smooth arg 7");
 
 		err = clEnqueueNDRangeKernel(queue, smooth_k,
-			1, NULL, gws, lws, /* griglia di lancio */
+			1, NULL, gws, (localWorkSize!=0)?lws:NULL, /* griglia di lancio */
 			waintingSize, waintingSize==0?NULL:waitingList, /* waiting list */
 			&smooth_evt);
 		ocl_check(err, "enqueue kernel smooth");
@@ -762,20 +764,62 @@ public:
 	}	
 };
 
-int main(const int argc, const char *argv[]) {
-	
-	const uint iterations = (argc>=2) ? atoi(argv[1]) : 1 ;
-	const float lambda = (argc>=4) ? atof(argv[2]) : 0.5f;
-	const float mi = (argc>=4) ? atof(argv[3]) : -0.5f;
-	
-	OpenCLEnvironment *OCLenv = new OpenCLEnvironment(OCL_PLATFORM, OCL_DEVICE, OCL_FILENAME);
+struct CommandOptions {
+	uint platformID;
+	uint deviceID;
+	std::string input_mesh;
+	uint iterations;
+	float lambda;
+	float mi;
+	char kernelOptions;
+	uint lws;
+} cmdOptions;
 
-	OBJ *obj = new OBJ(IN_MESH);
+void initCommandOptions() {
+	cmdOptions.platformID    = OCL_PLATFORM;
+	cmdOptions.deviceID      = OCL_DEVICE;
+	cmdOptions.input_mesh    = IN_MESH;
+	cmdOptions.iterations    = 1;
+	cmdOptions.lambda        = 0.5f;
+	cmdOptions.mi            = -0.5f;
+	cmdOptions.kernelOptions = OptNoOption;
+	cmdOptions.lws           = 0;
+}
+
+int main(const int argc, char *argv[]) {
+	
+	initCommandOptions();
+	
+	if(argc == 2) {
+		std::string str = argv[1];
+		if(str == "-h" || str == "-help") { printf("HELP\n"); exit(0); }
+		else { printf("Missing -parameter specification. (use -help)\n"); exit(-1); }
+	}
+	
+	for(int i=1; i<argc-1; i+=2) {
+		std::string param = argv[i];
+		std::string value = argv[i+1];
+		
+		if(param[0] != '-') { printf("Missing -parameter specification. (use -help)\n"); exit(-1); }
+		if(param[0] == '-' && value[0] == '-') { printf("Missing value after parameter. (use -help)\n"); exit(-1); }
+		
+		if(param == "-m" || param == "-mesh") cmdOptions.input_mesh = "res/"+value+".obj";
+		else if(param == "-d" || param == "-dev" || param == "-device") cmdOptions.deviceID = stoi(value);
+		else if(param == "-p" || param == "-plat" || param == "-platform") cmdOptions.platformID = stoi(value);
+		else if(param == "-i" || param == "-iter" || param == "-iterations") cmdOptions.iterations = stoi(value);
+		else if(param == "-l" || param == "-lamb" || param == "-lambda") cmdOptions.lambda = stof(value);
+		else if(param == "-t" || param == "-mi" || param == "-taubin") cmdOptions.mi = -stof(value);
+		else if(param == "-g" || param == "-lws" || param == "-localworksize") cmdOptions.lws = stoi(value);
+	}
+	
+	OpenCLEnvironment *OCLenv = new OpenCLEnvironment(cmdOptions.platformID, cmdOptions.deviceID, OCL_FILENAME);
+
+	OBJ *obj = new OBJ(cmdOptions.input_mesh);
 	
 	//OptNoOption | OptSortVertex | OptSortAdjs | OptCoalescence | OptLocalMemory
-	Smoothing smoothing(OCLenv, obj, OptSortVertex | OptSortAdjs | OptCoalescence );
+	Smoothing smoothing(OCLenv, obj, OptSortVertex | OptSortAdjs | OptCoalescence, cmdOptions.lws);
 
-	smoothing.execute(iterations, lambda, mi);
+	smoothing.execute(cmdOptions.iterations, cmdOptions.lambda, cmdOptions.mi);
 	
 	obj->write(OUT_MESH);
 
