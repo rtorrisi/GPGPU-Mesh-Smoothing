@@ -23,7 +23,7 @@
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
 
-#define IN_MESH CUBE
+#define IN_MESH SUZANNE
 #define OUT_MESH "res/out.obj"
 
 #define INIT_TIMER auto start_time = std::chrono::high_resolution_clock::now()
@@ -587,15 +587,14 @@ public:
 		}
 		
 		// Copy result
-		float *result_vertex4_array = new float[4*nels];
-		if (!result_vertex4_array) printf("error res\n");
-
 		cl_event copy_evt;
-		err = clEnqueueReadBuffer(OCLenv->queue, cl_vertex4_array, CL_TRUE,
-			0, memsize, result_vertex4_array,
-			1, &smooth_evts[iterations*2-1], &copy_evt);
-		ocl_check(err, "read buffer vertex4_array");
-		
+		float *result_vertex4_array = (float *)clEnqueueMapBuffer(
+			OCLenv->queue, cl_vertex4_array,
+			CL_TRUE, CL_MAP_READ,
+			0, memsize,
+			1, &smooth_evts[iterations*2-1],
+			&copy_evt, &err);
+		ocl_check(err, "map buffer vertex4_array");
 		
 		for(int i=0; i<nels; i++) {
 			obj->vertex_vector[i].x = result_vertex4_array[i*4];
