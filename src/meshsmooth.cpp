@@ -259,11 +259,6 @@ public:
 		// coalescence access requires sortVertex = true
 		sortVertex  = ( flagsOpt & OptSortVertex ) || coalescence;
 		sortAdjs    = ( flagsOpt & OptSortAdjs );
-		
-		printf(" -> sortVertex %d <-\n", sortVertex);
-		printf(" -> sortAdjs %d <-\n", sortAdjs);
-		printf(" -> coalescence %d <-\n", coalescence);
-		printf(" -> localMemory %d <-\n", localMemory);
 	}
 	
 	Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj, const unsigned char flagsOpt, const uint lws){
@@ -304,8 +299,7 @@ public:
 				if (std::find(adjacent3->begin(), adjacent3->end(), vertexID2) == adjacent3->end()) { adjacent3->push_back(vertexID2); adjsCount++; }
 			}
 		}
-		
-		if(orderedInsert) printf("### adjs insert ordered\n");		
+				
 		return adjsCount;
 	}
 
@@ -389,8 +383,6 @@ public:
 				if(currVertex->adjsCount>=i+1) adjCounter[i]++;
 			}
 		}
-
-		printf("### vertex array ordered\n");
 		
 		if(sortAdjs) {
 			for(int i=0; i<nels; i++) {
@@ -400,9 +392,8 @@ public:
 				std::sort(v->begin(), v->end(), vertex_struct_cmp);
 			}
 		}
-		if(sortAdjs) printf("### adjs array ordered\n");
-		return orderedVertex_arrayStruct;
 		
+		return orderedVertex_arrayStruct;
 	}
 	
 	void fillVertex4Array(float* vertex4_array){
@@ -483,7 +474,7 @@ public:
 					adjs_array[adjsIndex++] = adj->currentIndex;
 			}
 		}
-		if(coalescence) printf("### adjs filled to coalescence\n");
+		
 		printElapsedTime_ms("fillOrderedVertexAdjsArray", ELAPSED_TIME);
 	}
 	
@@ -534,15 +525,20 @@ public:
 		std::cout << " Mi factor: " << mi << std::endl;
 		printf("============================\n\n");
 		printf("========= OBJ INFO =========\n");
-		std::cout << " Input .obj path: " << IN_MESH << std::endl;
-		std::cout << " Output .obj path: " << OUT_MESH << std::endl;
+		std::cout << " Input path: " << IN_MESH << std::endl;
+		std::cout << " Output path: " << OUT_MESH << std::endl;
 		std::cout << " # Vertex: " << nels << std::endl;
 		std::cout << " # obj_adjacents_arrayVector: " << nadjs << std::endl;
-		std::cout << " # Min vertex adjs: " << minAdjsCount << std::endl;
-		std::cout << " # Max vertex adjs: " << maxAdjsCount << std::endl;
+		std::cout << " # Vertex adjs range: [" << minAdjsCount << ";" << maxAdjsCount << "]" << std::endl;
 		std::cout << " # Mean vertex adjs: " << meanAdjsCount << std::endl;
 		printf("============================\n\n");
-
+		printf("======== KERNEL OPT ========\n");
+		std::cout << " SortVertex: " << (sortVertex?"true":"false") << std::endl;
+		std::cout << " SortAdjs: " << (sortAdjs?"true":"false") << std::endl;
+		std::cout << " Coalescence: " << (coalescence?"true":"false") << std::endl;
+		std::cout << " LocalMemory: " << (localMemory?"true":"false") << std::endl;
+		printf("============================\n\n");
+		
 		cl_int err;
 		// Create Buffers
 		cl_mem cl_vertex4_array = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, memsize, vertex4_array, &err);
@@ -616,18 +612,14 @@ public:
 		meanRuntime_ms = totalRuntime_ms/(iterations*2.0);
 		meanRuntime_ns = meanRuntime_ms*1.0e6;
 
-		if(coalescence && localMemory) {
-			printf(" coal lmem smooth time:\t%gms\t%gGB/s (ignore bandwidth) \n", meanRuntime_ms,
-			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*sizeof(int)*nels + maxAdjsCount*sizeof(int)*(round_mul_up(nels, 512)/512))/meanRuntime_ns);
-		}
+		if(coalescence && localMemory)
+			printf(" coal lmem smooth time:\t%gms\n", meanRuntime_ms);
 		else if(coalescence) {
 			printf(" coal smooth time:\t%gms\t%gGB/s\n", meanRuntime_ms,
 			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*sizeof(int)*nels + meanAdjsCount*sizeof(int)*nels)/meanRuntime_ns);
 		}
-		else if(localMemory){
-			printf(" lmem smooth time:\t%gms\t~%gGB/s\n", meanRuntime_ms,
-			(2.0*memsize + (meanAdjsCount/3.0)*4*sizeof(float)*nels + meanAdjsCount*sizeof(int)*nels)/meanRuntime_ns);
-		}
+		else if(localMemory)
+			printf(" lmem smooth time:\t%gms\n", meanRuntime_ms);
 		else{
 			printf(" smooth time:\t%gms\t%gGB/s\n", meanRuntime_ms,
 			(2.0*memsize + meanAdjsCount*4*sizeof(float)*nels + meanAdjsCount*sizeof(int)*nels)/meanRuntime_ns);
@@ -635,9 +627,9 @@ public:
 		
 		printf(" copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt), (2.0*memsize)/runtime_ns(copy_evt));
 				
-		printf("kernels total time \t%gms\n", totalRuntime_ms);
+		printf(" kernels total time \t%gms\n", totalRuntime_ms);
 
-		printf(" ~ %g smooth pass(es)/sec\n", (iterations*2) / (totalRuntime_ms / 1000.0) );
+		printf(" ~ %g smooth pass(es)/sec\n", (iterations*2) / (totalRuntime_ms / 1.0e3) );
 		
 		printf("============================\n\n");
 	}
@@ -775,7 +767,7 @@ struct CommandOptions {
 	uint lws;
 } cmdOptions;
 
-void initCommandOptions() {
+void initCmdOptions() {
 	cmdOptions.platformID    = OCL_PLATFORM;
 	cmdOptions.deviceID      = OCL_DEVICE;
 	cmdOptions.input_mesh    = IN_MESH;
@@ -786,50 +778,78 @@ void initCommandOptions() {
 	cmdOptions.lws           = 0;
 }
 
-int main(const int argc, char *argv[]) {
-	
-	initCommandOptions();
-	
-	if(argc == 2) {
-		std::string str = argv[1];
-		if(str == "-h" || str == "-help") {
-			printf("HELP\n");
-			
-			printf(" -p / -plat / -platform      : platform ID\n");
-			printf(" -d / -dev  / -device        : device ID\n");
-			printf(" -m / -mesh / -input         : input mesh\n");
-			printf(" -i / -iter / -iterations    : iterations\n");
-			printf(" -l / -lamb / -lambda        : lambda factor\n");
-			printf(" -t / -mi   / -taubin        : mi factor\n");
-			printf(" -g / -lws  / -localworksize : local work size\n");
+void cmdOptionsHelp() {
+	printf(" \n Command parameters:\n");
+			printf(" -p / -platf / -platform       < Es: -p 0 >\n");
+			printf(" -d / -dev   / -device         < Es: -d 0 >\n");
+			printf(" -m / -mesh  / -input          < Es: -m cube_example >\n");
+			printf(" -i / -iter  / -iterations     < Es: -i 1 >\n");
+			printf(" -f / -facts / -factors        < Es: -f 0.22 0.21 >\n");
+			printf(" -o / -opt   / -options        < Es: -o sortVertex sortAdjs coalescence localMemory>\n");
+			printf(" -g / -lws   / -localworksize  < Es: -g 512 >\n");
 			
 			exit(0);
-		}
-		else { printf("Missing -parameter specification. (use -help)\n"); exit(-1); }
+}
+
+void cmdOptionsParser(const int argc, char *argv[]) {
+	if(argc == 2) {
+		std::string str = argv[1];
+		if(str == "-h" || str == "-help") cmdOptionsHelp();
+		else { printf(" Missing -parameter specification. (use -help)\n"); exit(-1); }
 	}
 	
 	for(int i=1; i<argc-1; i+=2) {
 		std::string param = argv[i];
 		std::string value = argv[i+1];
 		
-		if(param[0] != '-') { printf("Missing -parameter specification. (use -help)\n"); exit(-1); }
-		if(param[0] == '-' && value[0] == '-') { printf("Missing value after parameter. (use -help)\n"); exit(-1); }
+		if(param[0] != '-') { printf(" Missing -parameter specification. (use -help)\n"); exit(-1); }
+		if(value[0] == '-') { printf(" Missing value after -parameter. (use -help)\n"); exit(-1); }
 		
 		if(param == "-m" || param == "-mesh") cmdOptions.input_mesh = "res/"+value+".obj";
 		else if(param == "-d" || param == "-dev" || param == "-device") cmdOptions.deviceID = stoi(value);
 		else if(param == "-p" || param == "-plat" || param == "-platform") cmdOptions.platformID = stoi(value);
 		else if(param == "-i" || param == "-iter" || param == "-iterations") cmdOptions.iterations = stoi(value);
-		else if(param == "-l" || param == "-lamb" || param == "-lambda") cmdOptions.lambda = stof(value);
-		else if(param == "-t" || param == "-mi" || param == "-taubin") cmdOptions.mi = -stof(value);
+		else if(param == "-f" || param == "-facts" || param == "-factors") {
+			std::string factor1 = argv[i+1];
+			std::string factor2;
+			cmdOptions.lambda = stof(factor1);
+			if(i+2 < argc && (*argv[i+2] >= '0' && *argv[i+2] <= '9')) {
+				factor2 = argv[i+2];
+				cmdOptions.mi = -stof(factor2);
+			}
+			else cmdOptions.mi = -cmdOptions.lambda;
+			i++;
+		}
+		else if(param == "-t" || param == "-mi" || param == "-taubin");
+		else if(param == "-o" || param == "-opt" || param == "-options") {
+			std::string currentOpt;
+			while(i+1 < argc && *argv[i+1] != '-') {
+				currentOpt = argv[i+1];
+				
+				if(currentOpt == "sortVertex") cmdOptions.kernelOptions |= OptSortVertex;
+				else if(currentOpt == "sortAdjs") cmdOptions.kernelOptions |=  OptSortAdjs;
+				else if(currentOpt == "coalescence" || currentOpt == "coal") cmdOptions.kernelOptions |= OptCoalescence;
+				else if(currentOpt == "localMemory" || currentOpt == "lmem") cmdOptions.kernelOptions |= OptLocalMemory;
+				else { printf(" Wrong value after -options. (use -help)\n"); exit(-1); }
+				i++;
+			}
+			i--;
+		}
 		else if(param == "-g" || param == "-lws" || param == "-localworksize") cmdOptions.lws = stoi(value);
 	}
+}
+
+int main(const int argc, char *argv[]) {
+	
+	initCmdOptions();
+	cmdOptionsParser(argc, argv);
 	
 	OpenCLEnvironment *OCLenv = new OpenCLEnvironment(cmdOptions.platformID, cmdOptions.deviceID, OCL_FILENAME);
 
 	OBJ *obj = new OBJ(cmdOptions.input_mesh);
 	
 	//OptNoOption | OptSortVertex | OptSortAdjs | OptCoalescence | OptLocalMemory
-	Smoothing smoothing(OCLenv, obj, OptSortVertex | OptSortAdjs | OptCoalescence, cmdOptions.lws);
+	Smoothing smoothing(OCLenv, obj, cmdOptions.kernelOptions, cmdOptions.lws);
 
 	smoothing.execute(cmdOptions.iterations, cmdOptions.lambda, cmdOptions.mi);
 	
