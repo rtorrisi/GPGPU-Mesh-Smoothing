@@ -563,38 +563,32 @@ public:
 		err = clGetKernelWorkGroupInfo(smooth_k, OCLenv->deviceID, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(preferred_wg_smooth), &preferred_wg_smooth, NULL);
 		
 		printf("====== KERNEL LAUNCH =======\n");
-		INIT_TIMER;
-		START_TIMER;
 		
-		cl_event smooth_evt, smooth_evt2;
+		cl_event smooth_evts[iterations*2];
 		if(coalescence && localMemory) {
 			for(int iter=0; iter<iterations; iter++) {
-				smooth_evt = smooth_coalescence_lmem(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
-				smooth_evt2 = smooth_coalescence_lmem(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_vertex4_array, nels, mi, 1, &smooth_evt);
+				smooth_evts[iter*2] = smooth_coalescence_lmem(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, !!iter, smooth_evts+(iter*2)-1);
+				smooth_evts[iter*2+1] = smooth_coalescence_lmem(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_vertex4_array, nels, mi, 1, smooth_evts+(iter*2));
 			}
 		}
 		else if(coalescence) {
 			for(int iter=0; iter<iterations; iter++) {
-				smooth_evt = smooth_coalescence(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
-				smooth_evt2 = smooth_coalescence(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_vertex4_array, nels, mi, 1, &smooth_evt);
+				smooth_evts[iter*2] = smooth_coalescence(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, !!iter, smooth_evts+(iter*2)-1);
+				smooth_evts[iter*2+1] = smooth_coalescence(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_vertex4_array, nels, mi, 1, smooth_evts+(iter*2));
 			}
 		}
 		else if(localMemory) {
 			for(int iter=0; iter<iterations; iter++) {
-				smooth_evt = smooth_lmem(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
-				smooth_evt2 = smooth_lmem(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_vertex4_array, nels, mi, 1, &smooth_evt);
+				smooth_evts[iter*2] = smooth_lmem(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, !!iter, smooth_evts+(iter*2)-1);
+				smooth_evts[iter*2+1] = smooth_lmem(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_vertex4_array, nels, mi, 1, smooth_evts+(iter*2));
 			}
 		}
 		else {
 			for(int iter=0; iter<iterations; iter++) {
-				smooth_evt = smooth(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, !!iter, &smooth_evt2);
-				smooth_evt2 = smooth(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_vertex4_array, nels, mi, 1, &smooth_evt);
+				smooth_evts[iter*2] = smooth(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, !!iter, smooth_evts+(iter*2)-1);
+				smooth_evts[iter*2+1] = smooth(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_vertex4_array, nels, mi, 1, smooth_evts+(iter*2));
 			}
 		}
-		
-		err = clWaitForEvents(1, &smooth_evt2);
-		ocl_check(err, "clWaitForEvents");
-		const unsigned long long int elapsedTime = ELAPSED_TIME;
 		
 		// Copy result
 		float *result_vertex4_array = new float[4*nels];
@@ -603,12 +597,8 @@ public:
 		cl_event copy_evt;
 		err = clEnqueueReadBuffer(OCLenv->queue, cl_vertex4_array, CL_TRUE,
 			0, memsize, result_vertex4_array,
-			1, &smooth_evt2, &copy_evt);
+			1, &smooth_evts[iterations*2-1], &copy_evt);
 		ocl_check(err, "read buffer vertex4_array");
-		
-		
-		err = clWaitForEvents(1, &copy_evt);
-		ocl_check(err, "clWaitForEvents");
 		
 		
 		for(int i=0; i<nels; i++) {
@@ -616,28 +606,38 @@ public:
 			obj->vertex_vector[i].y = result_vertex4_array[i*4+1];
 			obj->vertex_vector[i].z = result_vertex4_array[i*4+2];
 		}
-		
+
+		double totalRuntime_ms = 0.0;
+		double meanRuntime_ms = 0.0;
+		double meanRuntime_ns = 0.0;
+
+		for(int i=0; i<iterations*2; i++) totalRuntime_ms+=runtime_ms(smooth_evts[i]);
+
+		meanRuntime_ms = totalRuntime_ms/(iterations*2.0);
+		meanRuntime_ns = meanRuntime_ms*1.0e6;
+
 		if(coalescence && localMemory) {
-			printf(" coal lmem smooth time:\t%gms\t%gGB/s (ignore bandwidth) \n", runtime_ms(smooth_evt),
-			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
+			printf(" coal lmem smooth time:\t%gms\t%gGB/s (ignore bandwidth) \n", meanRuntime_ms,
+			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*sizeof(int)*nels + maxAdjsCount*sizeof(int)*(round_mul_up(nels, 512)/512))/meanRuntime_ns);
 		}
 		else if(coalescence) {
-			printf(" coal smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
-			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int) + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
+			printf(" coal smooth time:\t%gms\t%gGB/s\n", meanRuntime_ms,
+			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*sizeof(int)*nels + meanAdjsCount*sizeof(int)*nels)/meanRuntime_ns);
 		}
 		else if(localMemory){
-			printf(" lmem smooth time:\t%gms\t%gGB/s (ignore bandwidth) \n", runtime_ms(smooth_evt),
-			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
+			printf(" lmem smooth time:\t%gms\t~%gGB/s\n", meanRuntime_ms,
+			(2.0*memsize + (meanAdjsCount/3.0)*4*sizeof(float)*nels + meanAdjsCount*sizeof(int)*nels)/meanRuntime_ns);
 		}
 		else{
-			printf(" smooth time:\t%gms\t%gGB/s\n", runtime_ms(smooth_evt),
-			(2.0*memsize + meanAdjsCount*memsize + meanAdjsCount*nels*sizeof(int))/runtime_ns(smooth_evt));
+			printf(" smooth time:\t%gms\t%gGB/s\n", meanRuntime_ms,
+			(2.0*memsize + meanAdjsCount*4*sizeof(float)*nels + meanAdjsCount*sizeof(int)*nels)/meanRuntime_ns);
 		}
 		
 		printf(" copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt), (2.0*memsize)/runtime_ns(copy_evt));
 				
-		printElapsedTime_ms("kernels total time", elapsedTime);
-		printf(" ~ %g smooth pass(es)/sec\n", 1/(runtime_ms(smooth_evt)/(double)1000) );
+		printf("kernels total time \t%gms\n", totalRuntime_ms);
+
+		printf(" ~ %g smooth pass(es)/sec\n", (iterations*2) / (totalRuntime_ms / 1000.0) );
 		
 		printf("============================\n\n");
 	}
