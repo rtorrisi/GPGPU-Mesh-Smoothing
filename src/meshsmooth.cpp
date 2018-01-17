@@ -792,7 +792,19 @@ int main(const int argc, char *argv[]) {
 	
 	if(argc == 2) {
 		std::string str = argv[1];
-		if(str == "-h" || str == "-help") { printf("HELP\n"); exit(0); }
+		if(str == "-h" || str == "-help") {
+			printf("HELP\n");
+			
+			printf(" -p / -plat / -platform      : platform ID\n");
+			printf(" -d / -dev  / -device        : device ID\n");
+			printf(" -m / -mesh / -input         : input mesh\n");
+			printf(" -i / -iter / -iterations    : iterations\n");
+			printf(" -l / -lamb / -lambda        : lambda factor\n");
+			printf(" -t / -mi   / -taubin        : mi factor\n");
+			printf(" -g / -lws  / -localworksize : local work size\n");
+			
+			exit(0);
+		}
 		else { printf("Missing -parameter specification. (use -help)\n"); exit(-1); }
 	}
 	
