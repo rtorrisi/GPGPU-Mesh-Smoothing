@@ -73,18 +73,14 @@ private:
 	uint verticesCount, uvsCount, normalsCount, facesCount;
 	std::string obj_path;
 	
-	void init() {
-		validData = false;
-		verticesCount = uvsCount = normalsCount = facesCount = 0;
-	}
-	void clear() {
-		init();
-		vertex_vector.clear();
-		facesVertexIndex_vector.clear();
-	}
 	bool OBJException(const char * strerror) {
 		printf(" Error: %s!\n", strerror);
 		return false;
+	}
+	
+	void init() {
+		validData = false;
+		verticesCount = uvsCount = normalsCount = facesCount = 0;
 	}
 	
 public:
@@ -97,9 +93,17 @@ public:
 	std::vector< uint > facesUVIndex_vector;
 
 	OBJ(std::string path){
-		this->obj_path = path;
+		obj_path = path;
 		init();
 		load(obj_path);
+	}
+	
+	~OBJ() { clear(); }
+	
+	void clear() {
+		init();
+		vertex_vector.clear();
+		facesVertexIndex_vector.clear();
 	}
 	
 	bool load(std::string path){
@@ -118,8 +122,7 @@ public:
 			char lineHeader[128];
 			// read the first word of the line
 			int res = fscanf(in_file, "%s", lineHeader);
-			if (res == EOF) break; // EOF = End Of File. Quit the loop.
-			// else : parse lineHeader
+			if (res == EOF) break;
 			if ( strcmp( lineHeader, "v" ) == 0 ){
 				glm::vec3 vertex;
 				fscanf(in_file, "%f %f %f\n", &vertex.x, &vertex.y, &vertex.z );
@@ -166,6 +169,7 @@ public:
 				facesCount++;
 			}
 		}
+		
 		fclose(in_file);
 		printElapsedTime_ms("load OBJ", ELAPSED_TIME);
 		validData = true;
@@ -281,13 +285,15 @@ public:
 	unsigned int discoverAdjacents(const bool orderedInsert){
 		unsigned int adjsCount = 0;
 		// Discover adjacents vertex for each vertex
-		obj_adjacents_arrayVector = new std::vector< uint >[nels]; 
-			
+		obj_adjacents_arrayVector = new std::vector< uint >[nels];
+		
+		
 		for(int i=0; i<obj->facesVertexIndex_vector.size(); i+=3){
 			uint vertexID1 = obj->facesVertexIndex_vector[i] - 1;
 			uint vertexID2 = obj->facesVertexIndex_vector[i+1] - 1;
 			uint vertexID3 = obj->facesVertexIndex_vector[i+2] - 1;
 
+			
 			std::vector< uint >* adjacent1 = &obj_adjacents_arrayVector[vertexID1];
 			std::vector< uint >* adjacent2 = &obj_adjacents_arrayVector[vertexID2];
 			std::vector< uint >* adjacent3 = &obj_adjacents_arrayVector[vertexID3];
@@ -308,7 +314,7 @@ public:
 				if (std::find(adjacent3->begin(), adjacent3->end(), vertexID2) == adjacent3->end()) { adjacent3->push_back(vertexID2); adjsCount++; }
 			}
 		}
-				
+		
 		return adjsCount;
 	}
 
@@ -504,6 +510,7 @@ public:
 	
 		nels          = obj->getVerticesCount();
 		nadjs         = discoverAdjacents(sortAdjs);
+		
 		meanAdjsCount = nadjs/(float)nels;
 		//-----------------------------------
 		vertex4_array = new float[4*nels];
@@ -867,7 +874,7 @@ public:
 int main(const int argc, char *argv[]) {
 	
 	std::vector<std::string> all_args(argv+1, argv+argc);
-
+	
 	CommandOptions cmdOptions(all_args.size(), all_args);
 	
 	OpenCLEnvironment *OCLenv = new OpenCLEnvironment(cmdOptions.platformID, cmdOptions.deviceID, OCL_FILENAME);
@@ -875,6 +882,7 @@ int main(const int argc, char *argv[]) {
 	
 	std::string cmdInput, param;
 	while(1) {
+		
 		Smoothing s(OCLenv, obj, cmdOptions.kernelOptions, cmdOptions.lws);
 		s.execute(cmdOptions.iterations, cmdOptions.lambda, cmdOptions.mi, cmdOptions.writeObj);
 		
