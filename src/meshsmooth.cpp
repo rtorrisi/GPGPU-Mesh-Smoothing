@@ -1,13 +1,14 @@
 #include "ocl_boiler.h"
+#include <cstdio>
 #include <iostream>
+#include <string>
+#include <sstream>
+#include <vector>
+#include <algorithm>
 #include <glm/vec4.hpp>
 #include <glm/vec3.hpp>
 #include <glm/vec2.hpp>
 #include <glm/gtx/string_cast.hpp>
-#include <cstdio>
-#include <string>
-#include <vector>
-#include <algorithm>
 #include <chrono>
 
 #define OCL_PLATFORM 1
@@ -23,7 +24,7 @@
 #define CUBE "res/cube_example.obj"
 #define NOISECUBE "res/cube_noise.obj"
 
-#define IN_MESH SUZANNE
+#define IN_MESH CUBE
 #define OUT_MESH "res/out.obj"
 
 #define INIT_TIMER auto start_time = std::chrono::high_resolution_clock::now()
@@ -39,21 +40,11 @@ enum Options {
 	OptSortAdjs    = 0x02, // 0x04 ==   4 == "00000100"
 	OptCoalescence = 0x04, // 0x08 ==   8 == "00001000"
 	OptLocalMemory = 0x08  // 0x10 ==  16 == "00010000"
-};
+}; //OptNoOption | OptSortVertex | OptSortAdjs | OptCoalescence | OptLocalMemory
 
 void printElapsedTime_ms(const char * str, const unsigned long long int microseconds) {
 	if(microseconds==0) printf(" %s : < 15ms\n", str);
 	else printf(" %s : %gms\n", str, microseconds/(double)1000);
-}
-
-bool orderedUniqueInsert(std::vector< uint >*vertexAdjacents, const uint vertexID) {
-	std::vector< uint >::iterator it;
-	for(it = vertexAdjacents->begin(); it != vertexAdjacents->end() && *it < vertexID; it++) {}
-	if(it == vertexAdjacents->end() || *it != vertexID) {
-		vertexAdjacents->insert(it, vertexID);
-		return true;
-	}
-	return false;
 }
 
 class OpenCLEnvironment {
@@ -66,13 +57,12 @@ public:
 	cl_program program;
 
 	OpenCLEnvironment(const cl_uint platformIndex, const cl_uint deviceIndex, const char* programPath){
-		printf("\n======= OPENCL INFO ========\n");
+		printf("\n=================== OPENCL INFO ====================\n");
 		platformID = select_platform(platformIndex);
 		deviceID = select_device(platformID, deviceIndex);
 		context = create_context(platformID, deviceID);
 		queue = create_queue(context, deviceID);
 		program = create_program(programPath, context, deviceID);
-		printf("============================\n\n");
 	}
 };
 
@@ -81,8 +71,9 @@ private:
 	
 	bool validData;
 	uint verticesCount, uvsCount, normalsCount, facesCount;
+	std::string obj_path;
 	
-	init() {
+	void init() {
 		validData = false;
 		verticesCount = uvsCount = normalsCount = facesCount = 0;
 	}
@@ -105,18 +96,17 @@ public:
 	std::vector< uint > facesNormalIndex_vector;
 	std::vector< uint > facesUVIndex_vector;
 
-	OBJ(){init();}
-
 	OBJ(std::string path){
+		this->obj_path = path;
 		init();
-		load(path);
+		load(obj_path);
 	}
 	
 	bool load(std::string path){
 		
 		clear();
 
-		printf("=========== LOAD ===========\n");
+		printf("\n======================= LOAD =======================\n");
 		printf(" > Loading %s...\n", path.c_str());
 		
 		INIT_TIMER;
@@ -177,14 +167,12 @@ public:
 			}
 		}
 		printElapsedTime_ms("load OBJ", ELAPSED_TIME);
-		printf(" > %s loaded!\n", path.c_str());
-		printf("============================\n\n");
 		validData = true;
 		return true;
 	}
 
 	bool write(std::string out_path) {
-		printf("========= SAVE OBJ =========\n");
+		printf("\n===================== SAVE OBJ =====================\n");
 		printf(" > Saving result to %s...\n", out_path.c_str());
 		INIT_TIMER;
 		START_TIMER;
@@ -206,11 +194,10 @@ public:
 			fprintf(out_file, "f %d %d %d\n", facesVertexIndex_vector[i*3], facesVertexIndex_vector[i*3+1], facesVertexIndex_vector[i*3+2]);
 		}
 		printElapsedTime_ms("write OBJ", ELAPSED_TIME);
-		printf(" > Result saved to %s!\n", OUT_MESH);
-		printf("============================\n");
 	}
 
 	bool hasValidData() const { return validData; }
+	std::string getPathName() const { return obj_path; }
 	uint getVerticesCount() const { return verticesCount; }
 	uint getFacesCount() const { return facesCount; }
 };
@@ -227,8 +214,6 @@ private:
 	uint localWorkSize;
 	OBJ* obj;
 	
-
-//TO-DO
 	struct vertex_struct{
 		uint currentIndex;
 		uint obj_vertex_vector_Index;
@@ -244,6 +229,15 @@ private:
 		bool operator() (vertex_struct* i,vertex_struct* j) { return (i->currentIndex < j->currentIndex);}
 	} vertex_struct_cmp;
 	
+	bool orderedUniqueInsert(std::vector< uint >*vertexAdjacents, const uint vertexID) {
+		std::vector< uint >::iterator it;
+		for(it = vertexAdjacents->begin(); it != vertexAdjacents->end() && *it < vertexID; it++) {}
+		if(it == vertexAdjacents->end() || *it != vertexID) {
+			vertexAdjacents->insert(it, vertexID);
+			return true;
+	}
+	return false;
+}
 //
 public:
 	size_t memsize, ajdsmemsize;
@@ -261,10 +255,10 @@ public:
 		sortAdjs    = ( flagsOpt & OptSortAdjs );
 	}
 	
-	Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj, const unsigned char flagsOpt, const uint lws){
+	Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj, const unsigned char flagsOpt, const uint localWorkSize){
 		this->OCLenv = OCLenv;
-		localWorkSize = lws;
-		this->obj = obj;
+		this->localWorkSize = localWorkSize;
+		this->obj = new OBJ(*obj);
 		parseBitFlags(flagsOpt);
 		init();
 	}
@@ -479,7 +473,7 @@ public:
 	}
 	
 	void init(){
-		printf("=======  INIT DATA =======\n");
+		printf("\n===================== INIT DATA ====================\n");
 		printf(" > Initializing data...\n");
 		
 		nels = nadjs = minAdjsCount = maxAdjsCount = 0;
@@ -512,32 +506,27 @@ public:
 			fillVertex4Array(vertex4_array);
 			fillVertexAdjsArray();
 		}
-	
-		printf(" > Data initialized!\n");
-		printf("============================\n\n");
 	}
 
-	void execute(uint iterations, float lambda, float mi){
+	void execute(uint iterations, float lambda, float mi, const bool writeOBJ){
 
-		printf("====== SMOOTHING INFO ======\n");
+		printf("\n================== SMOOTHING INFO ==================\n");
 		std::cout << " # Iterations: " << iterations << std::endl;
 		std::cout << " Lambda factor: " << lambda << std::endl;
 		std::cout << " Mi factor: " << mi << std::endl;
-		printf("============================\n\n");
-		printf("========= OBJ INFO =========\n");
-		std::cout << " Input path: " << IN_MESH << std::endl;
+		printf("\n===================== OBJ INFO =====================\n");
+		std::cout << " Input path: " << obj->getPathName() << std::endl;
 		std::cout << " Output path: " << OUT_MESH << std::endl;
 		std::cout << " # Vertex: " << nels << std::endl;
 		std::cout << " # obj_adjacents_arrayVector: " << nadjs << std::endl;
 		std::cout << " # Vertex adjs range: [" << minAdjsCount << ";" << maxAdjsCount << "]" << std::endl;
-		std::cout << " # Mean vertex adjs: " << meanAdjsCount << std::endl;
-		printf("============================\n\n");
-		printf("======== KERNEL OPT ========\n");
+		std::cout << " # Mean vertex adjs: " << meanAdjsCount << std::endl;\
+		printf("\n==================== KERNEL OPT ====================\n");
 		std::cout << " SortVertex: " << (sortVertex?"true":"false") << std::endl;
 		std::cout << " SortAdjs: " << (sortAdjs?"true":"false") << std::endl;
 		std::cout << " Coalescence: " << (coalescence?"true":"false") << std::endl;
 		std::cout << " LocalMemory: " << (localMemory?"true":"false") << std::endl;
-		printf("============================\n\n");
+		std::cout << " LocalWorkSize: " << localWorkSize << std::endl;
 		
 		cl_int err;
 		// Create Buffers
@@ -558,7 +547,7 @@ public:
 		// Set preferred_wg size from device info
 		err = clGetKernelWorkGroupInfo(smooth_k, OCLenv->deviceID, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(preferred_wg_smooth), &preferred_wg_smooth, NULL);
 		
-		printf("====== KERNEL LAUNCH =======\n");
+		printf("\n================== KERNEL LAUNCH ===================\n");
 		
 		cl_event smooth_evts[iterations*2];
 		if(coalescence && localMemory) {
@@ -625,16 +614,16 @@ public:
 		}
 		
 		printf(" copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt), (2.0*memsize)/runtime_ns(copy_evt));
-				
+		
 		printf(" kernels total time \t%gms\n", totalRuntime_ms);
-
 		printf(" ~ %g smooth pass(es)/sec\n", (iterations*2) / (totalRuntime_ms / 1.0e3) );
 		
-		printf("============================\n\n");
+		if(writeOBJ) obj->write(OUT_MESH);
 	}
 
 	cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
-		size_t gws[] = { round_mul_up(nels, preferred_wg_smooth) };
+		size_t lws[] = { localWorkSize };
+		size_t gws[] = { round_mul_up(nels, localWorkSize) };
 		cl_event smooth_evt;
 		cl_int err;
 
@@ -653,7 +642,7 @@ public:
 		ocl_check(err, "set smooth arg 4");
 
 		err = clEnqueueNDRangeKernel(queue, smooth_k,
-			1, NULL, gws, NULL, /* griglia di lancio */
+			1, NULL, gws, lws, /* griglia di lancio */
 			waintingSize, waintingSize==0?NULL:waitingList, /* waiting list */
 			&smooth_evt);
 		ocl_check(err, "enqueue kernel smooth");
@@ -662,7 +651,7 @@ public:
 	
 	cl_event smooth_lmem(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
 		size_t lws[] = { localWorkSize };
-		size_t gws[] = { round_mul_up(nels, (localWorkSize!=0)?localWorkSize:preferred_wg_smooth) };
+		size_t gws[] = { round_mul_up(nels, localWorkSize) };
 		cl_event smooth_evt;
 		cl_int err;
 
@@ -683,7 +672,7 @@ public:
 		ocl_check(err, "set smooth arg 5");
 
 		err = clEnqueueNDRangeKernel(queue, smooth_k,
-			1, NULL, gws, (localWorkSize!=0)?lws:NULL, /* griglia di lancio */
+			1, NULL, gws, lws, /* griglia di lancio */
 			waintingSize, waintingSize==0?NULL:waitingList, /* waiting list */
 			&smooth_evt);
 		ocl_check(err, "enqueue kernel smooth");
@@ -691,7 +680,8 @@ public:
 	}
 
 	cl_event smooth_coalescence(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_adjsCounter, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
-		size_t gws[] = { round_mul_up(nels, preferred_wg_smooth) };
+		size_t lws[] = { localWorkSize };
+		size_t gws[] = { round_mul_up(nels, localWorkSize)};
 		cl_event smooth_evt;
 		cl_int err;
 
@@ -712,7 +702,7 @@ public:
 		ocl_check(err, "coal set smooth arg 5");
 
 		err = clEnqueueNDRangeKernel(queue, smooth_k,
-			1, NULL, gws, NULL, /* griglia di lancio */
+			1, NULL, gws, lws, /* griglia di lancio */
 			waintingSize, waintingSize==0?NULL:waitingList, /* waiting list */
 			&smooth_evt);
 		ocl_check(err, "enqueue kernel smooth");
@@ -720,9 +710,8 @@ public:
 	}
 	
 	cl_event smooth_coalescence_lmem(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_adjsCounter, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
-
 		size_t lws[] = { localWorkSize };
-		size_t gws[] = { round_mul_up(nels, (localWorkSize!=0)?localWorkSize:preferred_wg_smooth) };
+		size_t gws[] = { round_mul_up(nels, localWorkSize) };
 		cl_event smooth_evt;
 		cl_int err;
 
@@ -747,7 +736,7 @@ public:
 		ocl_check(err, "coal set smooth arg 7");
 
 		err = clEnqueueNDRangeKernel(queue, smooth_k,
-			1, NULL, gws, (localWorkSize!=0)?lws:NULL, /* griglia di lancio */
+			1, NULL, gws, lws, /* griglia di lancio */
 			waintingSize, waintingSize==0?NULL:waitingList, /* waiting list */
 			&smooth_evt);
 		ocl_check(err, "enqueue kernel smooth");
@@ -755,105 +744,126 @@ public:
 	}	
 };
 
-struct CommandOptions {
+class CommandOptions {
+private:
+
+	void cmdOptionsHelp() {
+		printf(" \n Command parameters:\n");
+		printf(" -p / -platf / -platform       < Es: -p 0 >\n");
+		printf(" -d / -dev   / -device         < Es: -d 0 >\n");
+		printf(" -m / -mesh  / -input          < Es: -m cube_example >\n");
+		printf(" -i / -iter  / -iterations     < Es: -i 1 >\n");
+		printf(" -f / -facts / -factors        < Es: -f 0.22 0.21 >\n");
+		printf(" -w / -write / -b_write        < Es: -w 1 >\n");
+		printf(" -o / -opt   / -options        < Es: -o sortVertex sortAdjs coalescence localMemory>\n");
+		printf(" -g / -l     / -lws            < Es: -g 512 >\n");		
+		exit(0);
+	}
+
+public:
 	uint platformID;
 	uint deviceID;
 	std::string input_mesh;
 	uint iterations;
 	float lambda;
 	float mi;
+	bool writeObj;
 	char kernelOptions;
 	uint lws;
-} cmdOptions;
-
-void initCmdOptions() {
-	cmdOptions.platformID    = OCL_PLATFORM;
-	cmdOptions.deviceID      = OCL_DEVICE;
-	cmdOptions.input_mesh    = IN_MESH;
-	cmdOptions.iterations    = 1;
-	cmdOptions.lambda        = 0.5f;
-	cmdOptions.mi            = -0.5f;
-	cmdOptions.kernelOptions = OptNoOption;
-	cmdOptions.lws           = 0;
-}
-
-void cmdOptionsHelp() {
-	printf(" \n Command parameters:\n");
-			printf(" -p / -platf / -platform       < Es: -p 0 >\n");
-			printf(" -d / -dev   / -device         < Es: -d 0 >\n");
-			printf(" -m / -mesh  / -input          < Es: -m cube_example >\n");
-			printf(" -i / -iter  / -iterations     < Es: -i 1 >\n");
-			printf(" -f / -facts / -factors        < Es: -f 0.22 0.21 >\n");
-			printf(" -o / -opt   / -options        < Es: -o sortVertex sortAdjs coalescence localMemory>\n");
-			printf(" -g / -lws   / -localworksize  < Es: -g 512 >\n");
-			
-			exit(0);
-}
-
-void cmdOptionsParser(const int argc, char *argv[]) {
-	if(argc == 2) {
-		std::string str = argv[1];
-		if(str == "-h" || str == "-help") cmdOptionsHelp();
-		else { printf(" Missing -parameter specification. (use -help)\n"); exit(-1); }
+	
+	CommandOptions(const int argc, const std::vector<std::string> argv) {
+		initCmdOptions();
+		cmdOptionsParser(argc, argv);
 	}
 	
-	for(int i=1; i<argc-1; i+=2) {
-		std::string param = argv[i];
-		std::string value = argv[i+1];
-		
-		if(param[0] != '-') { printf(" Missing -parameter specification. (use -help)\n"); exit(-1); }
-		if(value[0] == '-') { printf(" Missing value after -parameter. (use -help)\n"); exit(-1); }
-		
-		if(param == "-m" || param == "-mesh") cmdOptions.input_mesh = "res/"+value+".obj";
-		else if(param == "-d" || param == "-dev" || param == "-device") cmdOptions.deviceID = stoi(value);
-		else if(param == "-p" || param == "-plat" || param == "-platform") cmdOptions.platformID = stoi(value);
-		else if(param == "-i" || param == "-iter" || param == "-iterations") cmdOptions.iterations = stoi(value);
-		else if(param == "-f" || param == "-facts" || param == "-factors") {
-			std::string factor1 = argv[i+1];
-			std::string factor2;
-			cmdOptions.lambda = stof(factor1);
-			if(i+2 < argc && (*argv[i+2] >= '0' && *argv[i+2] <= '9')) {
-				factor2 = argv[i+2];
-				cmdOptions.mi = -stof(factor2);
-			}
-			else cmdOptions.mi = -cmdOptions.lambda;
-			i++;
-		}
-		else if(param == "-t" || param == "-mi" || param == "-taubin");
-		else if(param == "-o" || param == "-opt" || param == "-options") {
-			std::string currentOpt;
-			while(i+1 < argc && *argv[i+1] != '-') {
-				currentOpt = argv[i+1];
-				
-				if(currentOpt == "sortVertex") cmdOptions.kernelOptions |= OptSortVertex;
-				else if(currentOpt == "sortAdjs") cmdOptions.kernelOptions |=  OptSortAdjs;
-				else if(currentOpt == "coalescence" || currentOpt == "coal") cmdOptions.kernelOptions |= OptCoalescence;
-				else if(currentOpt == "localMemory" || currentOpt == "lmem") cmdOptions.kernelOptions |= OptLocalMemory;
-				else { printf(" Wrong value after -options. (use -help)\n"); exit(-1); }
-				i++;
-			}
-			i--;
-		}
-		else if(param == "-g" || param == "-lws" || param == "-localworksize") cmdOptions.lws = stoi(value);
+	void initCmdOptions() {
+		platformID    = OCL_PLATFORM;
+		deviceID      = OCL_DEVICE;
+		input_mesh    = IN_MESH;
+		iterations    = 1;
+		lambda        = 0.5f;
+		mi            = -0.5f;
+		writeObj      = 0;
+		kernelOptions = OptNoOption;
+		lws           = 32;
 	}
-}
+	
+	void cmdOptionsParser(const int argc, const std::vector<std::string> argv) {
+		if(argc == 1) {
+			std::string str = argv[0];
+			if(str == "-h" || str == "-help") cmdOptionsHelp();
+			else { printf(" Missing -parameter specification. (use -help)\n"); exit(-1); }
+		}
+		
+		for(int i=0; i<argc-1; i+=2) {
+			std::string param = argv[i];
+			std::string value = argv[i+1];
+			
+			if(param[0] != '-') { printf(" Missing -parameter specification. (use -help)\n"); exit(-1); }
+			if(value[0] == '-') { printf(" Missing value after -parameter. (use -help)\n"); exit(-1); }
+			
+			if(param == "-m" || param == "-mesh") input_mesh = "res/"+value+".obj";
+			else if(param == "-d" || param == "-dev" || param == "-device") deviceID = stoi(value);
+			else if(param == "-p" || param == "-plat" || param == "-platform") platformID = stoi(value);
+			else if(param == "-i" || param == "-iter" || param == "-iterations") iterations = stoi(value);
+			else if(param == "-f" || param == "-facts" || param == "-factors") {
+				std::string factor1 = argv[i+1];
+				std::string factor2;
+				lambda = stof(factor1);
+				if(i+2 < argc && (argv[i+2][0] >= '0' && argv[i+2][0] <= '9')) {
+					factor2 = argv[i+2];
+					mi = -stof(factor2);
+					i++;
+				}
+				else mi = -lambda;
+			}
+			else if(param == "-w" || param == "-write" || param == "-b_write") writeObj = !!stoi(value);
+			else if(param == "-o" || param == "-opt" || param == "-options") {
+				std::string currentOpt;
+				while(i+1 < argc && argv[i+1][0] != '-') {
+					currentOpt = argv[i+1];
+					
+					if(currentOpt == "sortVertex") kernelOptions |= OptSortVertex;
+					else if(currentOpt == "sortAdjs") kernelOptions |=  OptSortAdjs;
+					else if(currentOpt == "coalescence" || currentOpt == "coal") kernelOptions |= OptCoalescence;
+					else if(currentOpt == "localMemory" || currentOpt == "lmem") kernelOptions |= OptLocalMemory;
+					else { printf(" Wrong value after -options. (use -help)\n"); exit(-1); }
+					i++;
+				}
+				i--;
+			}
+			else if(param == "-g" || param == "-l" || param == "-lws") lws = stoi(value);
+			else { printf(" Wrong -parameter. (use -help)\n"); exit(-1); }
+		}
+	}
+
+};
 
 int main(const int argc, char *argv[]) {
 	
-	initCmdOptions();
-	cmdOptionsParser(argc, argv);
+	std::vector<std::string> all_args(argv+1, argv+argc);
+
+	CommandOptions cmdOptions(all_args.size(), all_args);
 	
 	OpenCLEnvironment *OCLenv = new OpenCLEnvironment(cmdOptions.platformID, cmdOptions.deviceID, OCL_FILENAME);
-
 	OBJ *obj = new OBJ(cmdOptions.input_mesh);
 	
-	//OptNoOption | OptSortVertex | OptSortAdjs | OptCoalescence | OptLocalMemory
-	Smoothing smoothing(OCLenv, obj, cmdOptions.kernelOptions, cmdOptions.lws);
-
-	smoothing.execute(cmdOptions.iterations, cmdOptions.lambda, cmdOptions.mi);
+	std::string cmdInput, param;
+	do{
+		Smoothing s(OCLenv, obj, cmdOptions.kernelOptions, cmdOptions.lws);
+		s.execute(cmdOptions.iterations, cmdOptions.lambda, cmdOptions.mi, cmdOptions.writeObj);
+		
+		std::cout << "\n\n > Type new args, newline to use default values or exit (-e). (can't change input mesh)\n";
+		std::cout << " $ " << cmdOptions.input_mesh  << " " << std::flush;
+		getline(std::cin, cmdInput);
+		if(cmdInput == "exit" || cmdInput == "-e") break;
+		std::istringstream iss(cmdInput);
+		all_args.clear();
+		while( iss >> param ) all_args.push_back(param);
+		cmdOptions.initCmdOptions();
+		cmdOptions.cmdOptionsParser(all_args.size(), all_args);
+	}while(1);
 	
-	obj->write(OUT_MESH);
-
 	delete OCLenv;
 	delete obj;
 	return 0;
