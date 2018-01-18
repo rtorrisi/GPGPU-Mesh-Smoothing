@@ -166,6 +166,7 @@ public:
 				facesCount++;
 			}
 		}
+		fclose(in_file);
 		printElapsedTime_ms("load OBJ", ELAPSED_TIME);
 		validData = true;
 		return true;
@@ -194,6 +195,8 @@ public:
 			fprintf(out_file, "f %d %d %d\n", facesVertexIndex_vector[i*3], facesVertexIndex_vector[i*3+1], facesVertexIndex_vector[i*3+2]);
 		}
 		printElapsedTime_ms("write OBJ", ELAPSED_TIME);
+		
+		fclose(out_file);
 	}
 
 	bool hasValidData() const { return validData; }
@@ -245,7 +248,7 @@ public:
 	uint* adjs_array;
 
 	uint countingSize;
-	uint* adjCounter;
+	uint* adjCounter_array;
 	
 	void parseBitFlags(const unsigned char flagsOpt) {				
 		coalescence = ( flagsOpt & OptCoalescence );
@@ -258,16 +261,28 @@ public:
 	Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj, const unsigned char flagsOpt, const uint localWorkSize){
 		this->OCLenv = OCLenv;
 		this->localWorkSize = localWorkSize;
-		this->obj = new OBJ(*obj);
+		this->obj = new OBJ(*obj); 
+		obj_adjacents_arrayVector = nullptr;
+		vertex4_array = nullptr;
+		adjs_array = nullptr;
+		adjCounter_array = nullptr;
 		parseBitFlags(flagsOpt);
 		init();
+	}
+	
+	~Smoothing() {
+		if(obj!=nullptr) { delete obj; }
+		if(vertex4_array!=nullptr) { delete []vertex4_array; }
+		if(adjs_array!=nullptr) { delete []adjs_array; }
+		if(obj_adjacents_arrayVector!=nullptr) { delete []obj_adjacents_arrayVector; }
+		if(adjCounter_array!=nullptr) { delete []adjCounter_array; }
 	}
 	
 	unsigned int discoverAdjacents(const bool orderedInsert){
 		unsigned int adjsCount = 0;
 		// Discover adjacents vertex for each vertex
-		obj_adjacents_arrayVector = new std::vector< uint >[nels];
-
+		obj_adjacents_arrayVector = new std::vector< uint >[nels]; 
+			
 		for(int i=0; i<obj->facesVertexIndex_vector.size(); i+=3){
 			uint vertexID1 = obj->facesVertexIndex_vector[i] - 1;
 			uint vertexID2 = obj->facesVertexIndex_vector[i+1] - 1;
@@ -310,10 +325,11 @@ public:
 	vertex_struct** orderVertexByAdjCount(const bool sortAdjs) {
 		
 		// vertex_arrayStruct creation
-		vertex_struct** vertex_arrayStruct = new vertex_struct* [nels];
-
+		vertex_struct** vertex_arrayStruct = new vertex_struct* [nels]; 
+		
 		for(int i=0; i<nels; i++){
-			vertex_struct* v = new vertex_struct();
+			vertex_struct* v = new vertex_struct(); 
+			
 			v->currentIndex = i;
 			v->obj_vertex_vector_Index = i;
 			
@@ -328,14 +344,13 @@ public:
 
 		// faces_arrayStruct creation
 		uint facesCount = obj->getFacesCount();
-		face_struct* faces_arrayStruct = new face_struct[facesCount];
+		face_struct* faces_arrayStruct = new face_struct[facesCount]; 
 
 		for(int i=0; i<facesCount; i++){
 			faces_arrayStruct[i].faceVertices_struct_array[0] = vertex_arrayStruct[ obj->facesVertexIndex_vector[i*3] - 1 ];
 			faces_arrayStruct[i].faceVertices_struct_array[1] = vertex_arrayStruct[ obj->facesVertexIndex_vector[i*3+1] - 1 ];
 			faces_arrayStruct[i].faceVertices_struct_array[2] = vertex_arrayStruct[ obj->facesVertexIndex_vector[i*3+2] - 1 ];
 		}
-
 
 		//COUNTING SORT
 		countingSize = maxAdjsCount-minAdjsCount+1;
@@ -346,7 +361,8 @@ public:
 		//counting sort sums
 		for(int i=1; i<countingSize; i++) counting_array[i] += counting_array[i-1];
 
-		vertex_struct** orderedVertex_arrayStruct = new vertex_struct*[nels];
+		vertex_struct** orderedVertex_arrayStruct = new vertex_struct*[nels]; 
+		
 		//insert ordered vertex
 		for(int i=0; i<nels; i++) {
 			vertex_struct * currVertex = vertex_arrayStruct[i];
@@ -368,13 +384,13 @@ public:
 			obj->facesVertexIndex_vector[i*3+2] = faces_arrayStruct[i].faceVertices_struct_array[2]->currentIndex + 1;
 		}
 
-
-		adjCounter = new uint[maxAdjsCount];
-		for(int i=0; i<maxAdjsCount; i++) adjCounter[i] = 0;
+		adjCounter_array = new uint[maxAdjsCount]; 
+		
+		for(int i=0; i<maxAdjsCount; i++) adjCounter_array[i] = 0;
 		for(int i=0; i<maxAdjsCount; i++){
 			for(int j=0; j<nels; j++){
 				vertex_struct * currVertex = vertex_arrayStruct[j];
-				if(currVertex->adjsCount>=i+1) adjCounter[i]++;
+				if(currVertex->adjsCount>=i+1) adjCounter_array[i]++;
 			}
 		}
 		
@@ -387,6 +403,8 @@ public:
 			}
 		}
 		
+		delete []vertex_arrayStruct;  
+		delete []faces_arrayStruct; 
 		return orderedVertex_arrayStruct;
 	}
 	
@@ -495,12 +513,14 @@ public:
 		ajdsmemsize   =  nadjs*sizeof(uint);
 		
 		calcMinMaxAdjCount();
-
+		
 		if(sortVertex) {
-			vertex_struct** orderedVertex_arrayStruct;
-			orderedVertex_arrayStruct = orderVertexByAdjCount(sortAdjs);
+			vertex_struct** orderedVertex_arrayStruct = orderVertexByAdjCount(sortAdjs);
 			fillOrderedVertex4Array(vertex4_array, orderedVertex_arrayStruct, coalescence);
 			fillOrderedVertexAdjsArray(orderedVertex_arrayStruct, coalescence);
+			
+			for(int i=0; i<nels; i++) delete orderedVertex_arrayStruct[i];
+			delete []orderedVertex_arrayStruct; 
 		}
 		else {
 			fillVertex4Array(vertex4_array);
@@ -534,7 +554,7 @@ public:
 		cl_mem cl_adjs_array = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, ajdsmemsize, adjs_array, &err);
 		cl_mem cl_result_vertex4_array = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE, memsize, NULL, &err);
 		cl_mem cl_adjsCounter;
-		if(coalescence) cl_adjsCounter = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, maxAdjsCount*sizeof(uint), adjCounter, &err);
+		if(coalescence) cl_adjsCounter = clCreateBuffer(OCLenv->context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR, maxAdjsCount*sizeof(uint), adjCounter_array, &err);
 		
 		// Extract kernels
 		cl_kernel smooth_k;
@@ -795,7 +815,8 @@ public:
 			else { printf(" Missing -parameter specification. (use -help)\n"); exit(-1); }
 		}
 		
-		for(int i=0; i<argc-1; i+=2) {
+		for(int i=0; i<argc; i+=2) {
+			if(i==argc-1) { printf(" Wrong -parameters. (use -help)\n"); exit(-1); }
 			std::string param = argv[i];
 			std::string value = argv[i+1];
 			
@@ -823,10 +844,14 @@ public:
 				while(i+1 < argc && argv[i+1][0] != '-') {
 					currentOpt = argv[i+1];
 					
-					if(currentOpt == "sortVertex") kernelOptions |= OptSortVertex;
-					else if(currentOpt == "sortAdjs") kernelOptions |=  OptSortAdjs;
-					else if(currentOpt == "coalescence" || currentOpt == "coal") kernelOptions |= OptCoalescence;
-					else if(currentOpt == "localMemory" || currentOpt == "lmem") kernelOptions |= OptLocalMemory;
+					if(currentOpt == "sortVertex" || currentOpt == "SortVertex")
+						kernelOptions |= OptSortVertex;
+					else if(currentOpt == "sortAdjs" || currentOpt == "SortAdjs")
+						kernelOptions |=  OptSortAdjs;
+					else if(currentOpt == "coalescence" || currentOpt == "Coalescence" || currentOpt == "coal")
+						kernelOptions |= OptCoalescence;
+					else if(currentOpt == "localMemory" || currentOpt == "LocalMemory" || currentOpt == "lmem")
+						kernelOptions |= OptLocalMemory;
 					else { printf(" Wrong value after -options. (use -help)\n"); exit(-1); }
 					i++;
 				}
@@ -849,20 +874,22 @@ int main(const int argc, char *argv[]) {
 	OBJ *obj = new OBJ(cmdOptions.input_mesh);
 	
 	std::string cmdInput, param;
-	do{
+	while(1) {
 		Smoothing s(OCLenv, obj, cmdOptions.kernelOptions, cmdOptions.lws);
 		s.execute(cmdOptions.iterations, cmdOptions.lambda, cmdOptions.mi, cmdOptions.writeObj);
 		
-		std::cout << "\n\n > Type new args, newline to use default values or exit (-e). (can't change input mesh)\n";
-		std::cout << " $ " << cmdOptions.input_mesh  << " " << std::flush;
+		std::cout << "\n Type new args, newline to use default or exit (-e). (can't change mesh, plat & dev)\n";
+		std::cout << " $ " << std::flush;
 		getline(std::cin, cmdInput);
+		
 		if(cmdInput == "exit" || cmdInput == "-e") break;
 		std::istringstream iss(cmdInput);
 		all_args.clear();
 		while( iss >> param ) all_args.push_back(param);
+		
 		cmdOptions.initCmdOptions();
 		cmdOptions.cmdOptionsParser(all_args.size(), all_args);
-	}while(1);
+	}
 	
 	delete OCLenv;
 	delete obj;
