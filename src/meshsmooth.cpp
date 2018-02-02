@@ -618,6 +618,11 @@ public:
 			obj->vertex_vector[i].z = result_vertex4_array[i*4+2];
 		}
 
+		cl_event unmap_evt;
+		clEnqueueUnmapMemObject(OCLenv->queue, cl_vertex4_array, result_vertex4_array,
+			0, NULL,
+		 	&unmap_evt);
+
 		double totalRuntime_ms = 0.0;
 		double meanRuntime_ms = 0.0;
 		double meanRuntime_ns = 0.0;
@@ -644,8 +649,21 @@ public:
 		
 		printf(" kernels total time \t%gms\n", totalRuntime_ms);
 		printf(" ~ %g smooth pass(es)/sec\n", (iterations*2) / (totalRuntime_ms / 1.0e3) );
-		
+
 		if(writeOBJ) obj->write(OUT_MESH);
+
+		err = clReleaseMemObject(cl_vertex4_array);
+		ocl_check(err, "clReleaseMemObject cl_vertex4_array");
+		err = clReleaseMemObject(cl_adjs_array);
+		ocl_check(err, "clReleaseMemObject cl_adjs_array");
+		err = clReleaseMemObject(cl_result_vertex4_array);
+		ocl_check(err, "clReleaseMemObject cl_result_vertex4_array");
+		if(coalescence)
+		{
+			err = clReleaseMemObject(cl_adjsCounter);
+			ocl_check(err, "clReleaseMemObject cl_adjsCounter");
+		}
+		
 	}
 
 	cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
@@ -889,7 +907,7 @@ int main(const int argc, char *argv[]) {
 		std::cout << "\n Type new args, newline to use default or exit (-e). (can't change mesh, plat & dev)\n";
 		std::cout << " $ " << std::flush;
 		getline(std::cin, cmdInput);
-		
+
 		if(cmdInput == "exit" || cmdInput == "-e") break;
 		std::istringstream iss(cmdInput);
 		all_args.clear();
