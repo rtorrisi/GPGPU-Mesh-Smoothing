@@ -7,7 +7,6 @@ kernel void smooth(
 	global float4 * restrict result_vertex4_array,
 	unsigned int nels, float factor)
 {	
-	
 	const unsigned int i = get_global_id(0);
 	if(i >= nels) return;
 	
@@ -17,15 +16,12 @@ kernel void smooth(
 	const unsigned int adjsInfo = *(unsigned int *)&lastComponent;
 	const unsigned int adjsIndexOffset = adjsInfo>>COUNT_BITS;
 	const unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
-	//printf(" vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, vertex.x, vertex.y, vertex.z, adjsIndexOffset, adjsCount);
 	
 	float4 current_adj, umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
 	for(int adjIndex=0; adjIndex<adjsCount; adjIndex++)
 	{
 		current_adj = vertex4_array[adjs_array[adjsIndexOffset+adjIndex]];
 		umbrellaOperator += (current_adj - vertex);
-		//printf("adj index[%d] %d^o adj of vertex %d -> %f / %f / %f\n", adjs_array[adjsIndexOffset+adjIndex], adjIndex+1, i, current_adj.x, current_adj.y, current_adj.z);
-
 	}
 	umbrellaOperator /= adjsCount;
 	float4 res = vertex + factor*umbrellaOperator;
@@ -51,13 +47,11 @@ kernel void smooth_lmem(
 	local_vertex4_array[li] = vertex;
 	barrier(CLK_LOCAL_MEM_FENCE);
 
-
 	const float lastComponent = vertex.w;
 	const unsigned int adjsInfo = *(unsigned int *)&lastComponent;
 	const unsigned int adjsIndexOffset = adjsInfo>>COUNT_BITS;
 	const unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
 	
-
 	float4 current_adj, umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
 	unsigned int adj_index;
 	int local_Adjindex;
@@ -94,7 +88,6 @@ kernel void smooth_coalescence(
 	const float4 vertex = vertex4_array[i];
 	const float lastComponent = vertex.w;
 	const unsigned int adjsCount = *(unsigned int *)&lastComponent;
-	//printf("vertex %d -> %f / %f / %f   #adj -> %d \n", i, vertex.x, vertex.y, vertex.z, adjsCount);
 
 	float4 current_adj;
 	float4 umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
@@ -102,18 +95,14 @@ kernel void smooth_coalescence(
 	for(int adjIndex=0; adjIndex<adjsCount; adjIndex++)
 	{
 		current_adj = vertex4_array[adjs_array[i+offset]];
-		//printf("adj index[%d] %d^o adj of vertex %d -> %f / %f / %f\n", adjs_array[i+offset], adjIndex, i, current_adj.x, current_adj.y, current_adj.z);
 
 		umbrellaOperator += (current_adj - vertex);
-		//printf("Adj %d of vertex %d is vertex %d -> %f / %f / %f\n", adjIndex, i, adjs_array[i+offset], current_adj.x, current_adj.y, current_adj.z);
 		offset += adjsCounter_array[adjIndex];
-		//printf("Adj %d of vertex %d -> %d\n", adjIndex, i, adjs_array[i+offset]);
 	}
-	umbrellaOperator /= adjsCount; //controllare che non sia un vertice isolato
+	umbrellaOperator /= adjsCount; //check adjsCount!=0
 	float4 res = vertex + factor*umbrellaOperator;
 	res.w = lastComponent;
 	result_vertex4_array[i] = res;
-	//printf("result vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, res.x, res.y, res.z, adjsIndexOffset, adjsCount);
 }
 
 kernel void smooth_coalescence_lmem(
@@ -135,7 +124,6 @@ kernel void smooth_coalescence_lmem(
 	const float4 vertex = vertex4_array[i];
 	const float lastComponent = vertex.w;
 	const unsigned int adjsCount = *(unsigned int *)&lastComponent;
-	//printf("vertex %d -> %f / %f / %f   #adj -> %d \n", i, vertex.x, vertex.y, vertex.z, adjsCount);
 
 	float4 current_adj;
 	float4 umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
@@ -143,16 +131,12 @@ kernel void smooth_coalescence_lmem(
 	for(int adjIndex=0; adjIndex<adjsCount; adjIndex++)
 	{
 		current_adj = vertex4_array[adjs_array[i+offset]];
-		//printf("adj index[%d] %d^o adj of vertex %d -> %f / %f / %f\n", adjs_array[i+offset], adjIndex, i, current_adj.x, current_adj.y, current_adj.z);
 		
 		umbrellaOperator += (current_adj - vertex);
-		//printf("Adj %d of vertex %d is vertex %d -> %f / %f / %f\n", adjIndex, i, adjs_array[i+offset], current_adj.x, current_adj.y, current_adj.z);
 		offset += local_adjsCounter_array[adjIndex];
-		//printf("Adj %d of vertex %d -> %d\n", adjIndex, i, adjs_array[i+offset]);
 	}
-	umbrellaOperator /= adjsCount; //controllare che non sia un vertice isolato
+	umbrellaOperator /= adjsCount; //check adjsCount!=0
 	float4 res = vertex + factor*umbrellaOperator;
 	res.w = lastComponent;
 	result_vertex4_array[i] = res;
-	//printf("result vertex %d -> %f / %f / %f   #offset -> %d  #adj -> %d \n", i, res.x, res.y, res.z, adjsIndexOffset, adjsCount);
 }
