@@ -287,7 +287,8 @@ public:
 		// Discover adjacents vertex for each vertex
 		obj_adjacents_arrayVector = new std::vector< uint >[nels];
 		
-		
+		INIT_TIMER;
+		START_TIMER;
 		for(int i=0; i<obj->facesVertexIndex_vector.size(); i+=3){
 			uint vertexID1 = obj->facesVertexIndex_vector[i] - 1;
 			uint vertexID2 = obj->facesVertexIndex_vector[i+1] - 1;
@@ -314,7 +315,7 @@ public:
 				if (std::find(adjacent3->begin(), adjacent3->end(), vertexID2) == adjacent3->end()) { adjacent3->push_back(vertexID2); adjsCount++; }
 			}
 		}
-		
+		printElapsedTime_ms("discoverAdjacents", ELAPSED_TIME);
 		return adjsCount;
 	}
 
