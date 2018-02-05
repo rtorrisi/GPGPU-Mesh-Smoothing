@@ -42,6 +42,7 @@ kernel void smooth_lmem(
 	const unsigned int li = get_local_id(0);
 	const unsigned int ls = get_local_size(0);
 	const unsigned int gi = get_group_id(0);
+	const unsigned int GIxLS = gi*ls;
 	
 	const float4 vertex = vertex4_array[i];
 	local_vertex4_array[li] = vertex;
@@ -55,18 +56,15 @@ kernel void smooth_lmem(
 	float4 current_adj, umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
 	unsigned int adj_index;
 	int local_Adjindex;
-	int count = 0;
 	for(int adjIndex=0; adjIndex<adjsCount; adjIndex++)
 	{
 		adj_index = adjs_array[adjsIndexOffset+adjIndex];
-		local_Adjindex = adj_index - gi*ls;
+		local_Adjindex = adj_index - GIxLS;
 		
 		if(local_Adjindex >= 0 &&  local_Adjindex < ls)
 			current_adj = local_vertex4_array[local_Adjindex]; //read from local memory
-		else{
+		else
 			current_adj = vertex4_array[adj_index]; //read from global memory
-			count++;
-		}
 		umbrellaOperator += (current_adj - vertex);
 	}
 	umbrellaOperator /= adjsCount;
