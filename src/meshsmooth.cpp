@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 #include <sstream>
+#include <fstream>
 #include <vector>
 #include <algorithm>
 #include <glm/vec4.hpp>
@@ -116,40 +117,53 @@ public:
 		INIT_TIMER;
 		START_TIMER;
 		
-		FILE * in_file = fopen(path.c_str(), "r");
-		if( in_file == NULL ) return OBJException("fopen() -> Impossible to open the file");
-		while( 1 ){ // parsing
-			char lineHeader[128];
+		//FILE * in_file = fopen(path.c_str(), "r");
+		
+		std::fstream in;
+  		in.open (path.c_str(), std::fstream::in);
+		auto ss = std::ostringstream{};
+		ss << in.rdbuf();
+		std::string str = ss.str();
+		
+		char *cstr = new char[str.length() + 1];
+		strcpy(cstr, str.c_str());
+		char * pch;
+		pch = strtok (cstr,"\n");
+		
+		//if( in_file == NULL ) return OBJException("fopen() -> Impossible to open the file");
+		while( pch != NULL ){ // parsing
+			//char lineHeader[128];
 			// read the first word of the line
-			int res = fscanf(in_file, "%s", lineHeader);
-			if (res == EOF) break;
-			if ( strcmp( lineHeader, "v" ) == 0 ){
+			//int res = scanf(pch, "%s", lineHeader);
+			//if (res == EOF) break;
+			
+			if ( pch[0]=='v' && pch[1]==' ' ){
 				glm::vec3 vertex;
-				fscanf(in_file, "%f %f %f\n", &vertex.x, &vertex.y, &vertex.z );
+				sscanf(pch, "v %f %f %f", &vertex.x, &vertex.y, &vertex.z);
 				vertex_vector.push_back(vertex);
 				verticesCount++;
 			} 
-			else if ( strcmp( lineHeader, "vn" ) == 0 ){
+			else if ( pch[0]=='v' && pch[1]=='n' ) {
 				glm::vec3 normal;
-				fscanf(in_file, "%f %f %f\n", &normal.x, &normal.y, &normal.z );
+				sscanf(pch, "vn %f %f %f\n", &normal.x, &normal.y, &normal.z );
 				normal_vector.push_back(normal);
 				normalsCount++;
 			}
-			else if ( strcmp( lineHeader, "vt" ) == 0 ){
+			else if ( pch[0]=='v' && pch[1]=='t' ){
 				glm::vec2 uv;
-				fscanf(in_file, "%f %f\n", &uv.x, &uv.y);
+				sscanf(pch, "vt %f %f\n", &uv.x, &uv.y);
 				uv_vector.push_back(uv);
 				uvsCount++;
 			}
-			else if ( strcmp( lineHeader, "f" ) == 0 ){
+			else if ( pch[0]=='f' && pch[1]==' ' ){
 				uint faceVertexIndex[3], faceUvIndex[3], faceNormalIndex[3];
 				
-				char line[512];
-				fgets( line, 512, in_file);
+				//char line[512];
+				//fgets( line, 512, in_file);
 				
-				int	match = sscanf(line, "%d/%d/%d %d/%d/%d %d/%d/%d\n", &faceVertexIndex[0], &faceUvIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceUvIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceUvIndex[2], &faceNormalIndex[2]);
-				if(match < 9) match = sscanf(line,"%d//%d %d//%d %d//%d\n", &faceVertexIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceNormalIndex[2]);
-				if(match < 6) match = sscanf(line,"%d %d %d\n", &faceVertexIndex[0], &faceVertexIndex[1], &faceVertexIndex[2]);
+				int	match = sscanf(pch, "f %d/%d/%d %d/%d/%d %d/%d/%d\n", &faceVertexIndex[0], &faceUvIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceUvIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceUvIndex[2], &faceNormalIndex[2]);
+				if(match < 9) match = sscanf(pch,"f %d//%d %d//%d %d//%d\n", &faceVertexIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceNormalIndex[2]);
+				if(match < 6) match = sscanf(pch,"f %d %d %d\n", &faceVertexIndex[0], &faceVertexIndex[1], &faceVertexIndex[2]);
 				if(match < 3) { validData=false; OBJException("parser -> Try exporting with other options");}
 				{
 					facesVertexIndex_vector.push_back(faceVertexIndex[0]);
@@ -168,9 +182,12 @@ public:
 				}
 				facesCount++;
 			}
+			
+			pch = strtok (NULL, "\n");
 		}
 		
-		fclose(in_file);
+		delete [] cstr;
+		//fclose(in_file);
 		printElapsedTime_ms("load OBJ", ELAPSED_TIME);
 		validData = true;
 		return true;
