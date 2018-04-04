@@ -13,7 +13,8 @@ kernel void smooth(
 	const float4 vertex = vertex4_array[i];
 	
 	const float lastComponent = vertex.w;
-	const unsigned int adjsInfo = *(unsigned int *)&lastComponent;
+	//const unsigned int adjsInfo = *(unsigned int *)&lastComponent;
+	const unsigned int adjsInfo = as_uint(lastComponent);
 	const unsigned int adjsIndexOffset = adjsInfo>>COUNT_BITS;
 	const unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
 	
@@ -50,7 +51,8 @@ kernel void smooth_lmem(
 	barrier(CLK_LOCAL_MEM_FENCE);
 
 	const float lastComponent = vertex.w;
-	const unsigned int adjsInfo = *(unsigned int *)&lastComponent;
+	//const unsigned int adjsInfo = *(unsigned int *)&lastComponent;
+	const unsigned int adjsInfo = as_uint(lastComponent);
 	const unsigned int adjsIndexOffset = adjsInfo>>COUNT_BITS;
 	const unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
 	
@@ -87,7 +89,8 @@ kernel void smooth_coalescence(
 	
 	const float4 vertex = vertex4_array[i];
 	const float lastComponent = vertex.w;
-	const unsigned int adjsCount = *(unsigned int *)&lastComponent;
+	//const unsigned int adjsCount = *(unsigned int *)&lastComponent;
+	const unsigned int adjsCount = as_uint(lastComponent);
 
 	float4 current_adj;
 	float4 umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
@@ -123,7 +126,8 @@ kernel void smooth_coalescence_lmem(
 	
 	const float4 vertex = vertex4_array[i];
 	const float lastComponent = vertex.w;
-	const unsigned int adjsCount = *(unsigned int *)&lastComponent;
+	//const unsigned int adjsCount = *(unsigned int *)&lastComponent;
+	const unsigned int adjsCount = as_uint(lastComponent);
 
 	float4 current_adj;
 	float4 umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
