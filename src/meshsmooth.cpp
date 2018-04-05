@@ -32,8 +32,34 @@
 #define START_TIMER start_time = std::chrono::high_resolution_clock::now()
 #define ELAPSED_TIME std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::high_resolution_clock::now()-start_time).count()
 
+using namespace std;
+
 typedef unsigned int uint;
 size_t preferred_wg_smooth;
+
+inline void split(std::string const& s, const char delimiter, int output[])
+{
+    size_t start=0;
+    size_t end=s.find_first_of(delimiter);
+    
+	std::string str;
+	int i=0;
+    
+	output[1] = 0;
+	output[2] = 0;
+	
+    while (end <= std::string::npos)
+    {
+		str = s.substr(start, end-start);
+		
+		output[i++] = (str!="") ? stoi(str) : 0;
+
+	    if (end == std::string::npos) break;
+
+    	start=end+1;
+    	end = s.find_first_of(delimiter, start);
+    }
+}
 
 enum Options {
 	OptNoOption    = 0x00, // 0x01 ==   1 == "00000001"
@@ -116,78 +142,59 @@ public:
 		
 		INIT_TIMER;
 		START_TIMER;
-		
-		//FILE * in_file = fopen(path.c_str(), "r");
-		
-		std::fstream in;
-  		in.open (path.c_str(), std::fstream::in);
-		auto ss = std::ostringstream{};
+
+		ifstream in;
+		in.open(path); //TO-DO check that file exists
+
+		stringstream ss;
 		ss << in.rdbuf();
-		std::string str = ss.str();
-		
-		char *cstr = new char[str.length() + 1];
-		strcpy(cstr, str.c_str());
-		char * pch;
-		pch = strtok (cstr,"\n");
-		
-		//if( in_file == NULL ) return OBJException("fopen() -> Impossible to open the file");
-		while( pch != NULL ){ // parsing
-			//char lineHeader[128];
-			// read the first word of the line
-			//int res = scanf(pch, "%s", lineHeader);
-			//if (res == EOF) break;
-			
-			if ( pch[0]=='v' && pch[1]==' ' ){
-				glm::vec3 vertex;
-				sscanf(pch, "v %f %f %f", &vertex.x, &vertex.y, &vertex.z);
-				vertex_vector.push_back(vertex);
+
+		string keyword, a, b, c;
+
+		int s1[3]{0}, s2[3]{0}, s3[3]{0};
+
+		while(ss >> keyword) 
+		{
+			if( keyword == "v") 
+			{
+				ss >> a >> b >> c;
+				vertex_vector.push_back(glm::vec3(stof(a), stof(b), stof(c)));
 				verticesCount++;
-			} 
-			else if ( pch[0]=='v' && pch[1]=='n' ) {
-				glm::vec3 normal;
-				sscanf(pch, "vn %f %f %f\n", &normal.x, &normal.y, &normal.z );
-				normal_vector.push_back(normal);
+			}
+			else if (keyword == "vn") 
+			{
+				ss >> a >> b >> c;
+				normal_vector.push_back(glm::vec3(stof(a), stof(b), stof(c)));
 				normalsCount++;
 			}
-			else if ( pch[0]=='v' && pch[1]=='t' ){
-				glm::vec2 uv;
-				sscanf(pch, "vt %f %f\n", &uv.x, &uv.y);
-				uv_vector.push_back(uv);
+			else if (keyword == "vt")
+			{
+				ss >> a >> b;
+				uv_vector.push_back(glm::vec2(stof(a), stof(b)));
 				uvsCount++;
 			}
-			else if ( pch[0]=='f' && pch[1]==' ' ){
-				uint faceVertexIndex[3], faceUvIndex[3], faceNormalIndex[3];
-				
-				//char line[512];
-				//fgets( line, 512, in_file);
-				
-				int	match = sscanf(pch, "f %d/%d/%d %d/%d/%d %d/%d/%d\n", &faceVertexIndex[0], &faceUvIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceUvIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceUvIndex[2], &faceNormalIndex[2]);
-				if(match < 9) match = sscanf(pch,"f %d//%d %d//%d %d//%d\n", &faceVertexIndex[0], &faceNormalIndex[0], &faceVertexIndex[1], &faceNormalIndex[1], &faceVertexIndex[2], &faceNormalIndex[2]);
-				if(match < 6) match = sscanf(pch,"f %d %d %d\n", &faceVertexIndex[0], &faceVertexIndex[1], &faceVertexIndex[2]);
-				if(match < 3) { validData=false; OBJException("parser -> Try exporting with other options");}
-				{
-					facesVertexIndex_vector.push_back(faceVertexIndex[0]);
-					facesVertexIndex_vector.push_back(faceVertexIndex[1]);
-					facesVertexIndex_vector.push_back(faceVertexIndex[2]);
-				}
-				if(normalsCount>0){
-					facesNormalIndex_vector.push_back(faceNormalIndex[0]);
-					facesNormalIndex_vector.push_back(faceNormalIndex[1]);
-					facesNormalIndex_vector.push_back(faceNormalIndex[2]);
-				}
-				if(uvsCount>0) {
-					facesUVIndex_vector.push_back(faceUvIndex[0]);
-					facesUVIndex_vector.push_back(faceUvIndex[1]);
-					facesUVIndex_vector.push_back(faceUvIndex[2]);
-				}
-				facesCount++;
+			else if (keyword == "f")
+			{
+				ss >> a >> b >> c;
+
+				split(a, '/', s1);
+				split(b, '/', s2);
+				split(c, '/', s3);
+
+				facesVertexIndex_vector.push_back(s1[0]);
+				facesNormalIndex_vector.push_back(s1[1]);
+				facesUVIndex_vector.push_back(s1[2]);
+
+				facesVertexIndex_vector.push_back(s2[0]);
+				facesNormalIndex_vector.push_back(s2[1]);
+				facesUVIndex_vector.push_back(s2[2]);
+
+				facesVertexIndex_vector.push_back(s3[0]);
+				facesNormalIndex_vector.push_back(s3[1]);
+				facesUVIndex_vector.push_back(s3[2]);
 			}
-			
-			pch = strtok (NULL, "\n");
 		}
-		
-		delete [] cstr;
-		//fclose(in_file);
+
 		printElapsedTime_ms("load OBJ", ELAPSED_TIME);
 		validData = true;
 		return true;
