@@ -192,6 +192,8 @@ public:
 				facesVertexIndex_vector.push_back(s3[0]);
 				facesNormalIndex_vector.push_back(s3[1]);
 				facesUVIndex_vector.push_back(s3[2]);
+				
+				facesCount++;
 			}
 		}
 
