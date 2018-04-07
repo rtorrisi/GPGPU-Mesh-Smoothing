@@ -1,0 +1,146 @@
+#define INDEX_BITS 26
+#define COUNT_BITS 6
+
+kernel void smooth(
+	global const float4 * restrict vertex4_array,
+	global const unsigned int * restrict adjs_array,
+	global float4 * restrict result_vertex4_array,
+	unsigned int nels, float factor)
+{	
+	const unsigned int i = get_global_id(0);
+	if(i >= nels) return;
+	
+	const float4 vertex = vertex4_array[i];
+	
+	const float lastComponent = vertex.w;
+	//const unsigned int adjsInfo = *(unsigned int *)&lastComponent;
+	const unsigned int adjsInfo = as_uint(lastComponent);
+	const unsigned int adjsIndexOffset = adjsInfo>>COUNT_BITS;
+	const unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
+	
+	float4 current_adj, umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
+	for(int adjIndex=0; adjIndex<adjsCount; adjIndex++)
+	{
+		current_adj = vertex4_array[adjs_array[adjsIndexOffset+adjIndex]];
+		umbrellaOperator += (current_adj - vertex);
+	}
+	
+	umbrellaOperator /= adjsCount;
+	float4 res = vertex + factor*umbrellaOperator;
+	res.w = lastComponent;
+	result_vertex4_array[i] = res;
+}
+
+kernel void smooth_lmem(
+	global const float4 * restrict vertex4_array,
+	local float4 * restrict local_vertex4_array,
+	global const unsigned int * restrict adjs_array,
+	global float4 * restrict result_vertex4_array,
+	unsigned int nels, float factor)
+{	
+	const unsigned int i = get_global_id(0);	
+	if(i >= nels) return;
+	
+	const unsigned int li = get_local_id(0);
+	const unsigned int ls = get_local_size(0);
+	const unsigned int gi = get_group_id(0);
+	const unsigned int GIxLS = gi*ls;
+	
+	const float4 vertex = vertex4_array[i];
+	local_vertex4_array[li] = vertex;
+	barrier(CLK_LOCAL_MEM_FENCE);
+
+	const float lastComponent = vertex.w;
+	//const unsigned int adjsInfo = *(unsigned int *)&lastComponent;
+	const unsigned int adjsInfo = as_uint(lastComponent);
+	const unsigned int adjsIndexOffset = adjsInfo>>COUNT_BITS;
+	const unsigned int adjsCount = ((adjsInfo)<<INDEX_BITS)>>INDEX_BITS;
+	
+	float4 current_adj, umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
+	unsigned int adj_index;
+	int local_Adjindex;
+	for(int adjIndex=0; adjIndex<adjsCount; adjIndex++)
+	{
+		adj_index = adjs_array[adjsIndexOffset+adjIndex];
+		local_Adjindex = adj_index - GIxLS;
+		
+		if(local_Adjindex >= 0 &&  local_Adjindex < ls) //read from local memory
+			current_adj = local_vertex4_array[local_Adjindex];
+		else //read from global memory
+			current_adj = vertex4_array[adj_index];
+		umbrellaOperator += (current_adj - vertex);
+	}
+	
+	umbrellaOperator /= adjsCount;
+	float4 res = vertex + factor*umbrellaOperator;
+	res.w = lastComponent;
+	result_vertex4_array[i] = res;
+}
+
+kernel void smooth_coalescence(
+	global const float4 * restrict vertex4_array,
+	global const unsigned int * restrict adjs_array,
+	global const unsigned int * restrict adjsCounter_array,
+	global float4 * restrict result_vertex4_array,
+	unsigned int nels, float factor)
+{	
+	const unsigned int i = get_global_id(0);
+	if(i >= nels) return;
+	
+	const float4 vertex = vertex4_array[i];
+	const float lastComponent = vertex.w;
+	//const unsigned int adjsCount = *(unsigned int *)&lastComponent;
+	const unsigned int adjsCount = as_uint(lastComponent);
+
+	float4 current_adj;
+	float4 umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
+	int offset = 0;
+	for(int adjIndex=0; adjIndex<adjsCount; adjIndex++)
+	{
+		current_adj = vertex4_array[adjs_array[i+offset]];
+		umbrellaOperator += (current_adj - vertex);
+		offset += adjsCounter_array[adjIndex];
+	}
+	
+	umbrellaOperator /= adjsCount; //check adjsCount!=0
+	float4 res = vertex + factor*umbrellaOperator;
+	res.w = lastComponent;
+	result_vertex4_array[i] = res;
+}
+
+kernel void smooth_coalescence_lmem(
+	global const float4 * restrict vertex4_array,
+	global const unsigned int * restrict adjs_array,
+	global const unsigned int * restrict adjsCounter_array,
+	local unsigned int * restrict local_adjsCounter_array, const unsigned int adjsCounter_array_dim,
+	global float4 * restrict result_vertex4_array,
+	unsigned int nels, float factor)
+{	
+
+	const unsigned int li = get_local_id(0);
+	const unsigned int i = get_global_id(0);
+	
+	if(li<adjsCounter_array_dim) local_adjsCounter_array[li] = adjsCounter_array[li];
+	barrier(CLK_LOCAL_MEM_FENCE);
+	if(i >= nels) return;
+	
+	const float4 vertex = vertex4_array[i];
+	const float lastComponent = vertex.w;
+	//const unsigned int adjsCount = *(unsigned int *)&lastComponent;
+	const unsigned int adjsCount = as_uint(lastComponent);
+
+	float4 current_adj;
+	float4 umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
+	int offset = 0;
+	for(int adjIndex=0; adjIndex<adjsCount; adjIndex++)
+	{
+		current_adj = vertex4_array[adjs_array[i+offset]];
+		umbrellaOperator += (current_adj - vertex);
+		offset += local_adjsCounter_array[adjIndex];
+	}
+	
+	umbrellaOperator /= adjsCount; //check adjsCount!=0
+	float4 res = vertex + factor*umbrellaOperator;
+	res.w = lastComponent;
+	result_vertex4_array[i] = res;
+}
