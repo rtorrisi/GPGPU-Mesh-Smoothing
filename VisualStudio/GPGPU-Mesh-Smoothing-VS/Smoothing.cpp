@@ -206,11 +206,10 @@ void Smoothing::fillVertex4Array(float* vertex4_array) {
 		vertex4_array[4 * i] = vertex.x;
 		vertex4_array[4 * i + 1] = vertex.y;
 		vertex4_array[4 * i + 2] = vertex.z;
-
+		
 		uint currentAdjsCount = (uint)obj_adjacents_arrayVector[i].size();
-		uint* adjIndexPtr = (uint*)(&vertex4_array[4 * i + 3]);
-		*adjIndexPtr = ((uint)currentAdjStartIndex) << 6;
-		*adjIndexPtr += (currentAdjsCount << 26) >> 26;
+		uint lastComponent = (currentAdjStartIndex << 6) | (currentAdjsCount & 0x3f); //0x3f = 0b111111
+		vertex4_array[4 * i + 3] = *reinterpret_cast<float *>(&lastComponent);
 
 		currentAdjStartIndex += currentAdjsCount;
 	}
@@ -231,14 +230,12 @@ void Smoothing::fillOrderedVertex4Array(float* vertex4_array, vertex_struct** or
 		vertex4_array[4 * i + 2] = vertex.z;
 
 		uint currentAdjsCount = currVertex->adjsCount;
-		uint* adjIndexPtr = (uint*)(&vertex4_array[4 * i + 3]);
 
-		if (coalescence) *adjIndexPtr = currentAdjsCount;
+		if (coalescence) vertex4_array[4 * i + 3] = *reinterpret_cast<float*>(&currentAdjsCount);
 		else {
-			*adjIndexPtr = ((uint)currentAdjStartIndex) << 6;
-			*adjIndexPtr += (currentAdjsCount << 26) >> 26;
+			uint lastComponent = (currentAdjStartIndex << 6) | (currentAdjsCount & 0x3f);//0x3f = 0b111111
+			vertex4_array[4 * i + 3] = *reinterpret_cast<float*>(&lastComponent); 
 		}
-
 		currentAdjStartIndex += currentAdjsCount;
 	}
 	PRINT_ELAPSED_TIME("fillOrderedVertex4Array", ELAPSED_TIME);
