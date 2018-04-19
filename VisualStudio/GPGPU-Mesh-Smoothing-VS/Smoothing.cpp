@@ -33,7 +33,9 @@ bool Smoothing::orderedUniqueInsert(std::vector< uint >*vertexAdjacents, const u
 
 void Smoothing::parseBitFlags(const unsigned char flagsOpt) {
 	coalescence = (flagsOpt & CommandOptions::Options::OptCoalescence);
-	localMemory = (flagsOpt & CommandOptions::Options::OptLocalMemory);
+	wideLocaMemory = (flagsOpt & CommandOptions::Options::OptWideLocalMemory);
+	localMemory = (flagsOpt & CommandOptions::Options::OptLocalMemory) || wideLocaMemory;
+	
 	// coalescence access requires sortVertex = true
 	sortVertex = (flagsOpt & CommandOptions::Options::OptSortVertex) || coalescence;
 	sortAdjs = (flagsOpt & CommandOptions::Options::OptSortAdjs);
@@ -264,7 +266,7 @@ void Smoothing::fillOrderedVertexAdjsArray(vertex_struct** orderedVertex_arraySt
 					adjs_array[adjsIndex++] = currVertex->adjs[i]->currentIndex;
 			}
 	}
-	else { //TO-DO non coalescence access (change kernel adjs access)
+	else {
 		for (uint i = 0; i<nels; i++) {
 			vertex_struct * currVertex = orderedVertex_arrayStruct[i];
 			for (vertex_struct* adj : currVertex->adjs)
@@ -332,6 +334,7 @@ void Smoothing::execute(uint iterations, float lambda, float mi, const bool writ
 	std::cout << " SortAdjs: " << (sortAdjs ? "true" : "false") << std::endl;
 	std::cout << " Coalescence: " << (coalescence ? "true" : "false") << std::endl;
 	std::cout << " LocalMemory: " << (localMemory ? "true" : "false") << std::endl;
+	std::cout << " WideLocalMemory: " << (wideLocaMemory ? "true" : "false") << std::endl;
 	std::cout << " LocalWorkSize: " << localWorkSize << std::endl;
 
 	cl_int err;
@@ -346,16 +349,25 @@ void Smoothing::execute(uint iterations, float lambda, float mi, const bool writ
 	cl_kernel smooth_k;
 	if (coalescence && localMemory) smooth_k = clCreateKernel(OCLenv->program, "smooth_coalescence_lmem", &err);
 	else if (coalescence) smooth_k = clCreateKernel(OCLenv->program, "smooth_coalescence", &err);
+	else if (wideLocaMemory) smooth_k = clCreateKernel(OCLenv->program, "smooth_lmem_wide", &err);
 	else if (localMemory) smooth_k = clCreateKernel(OCLenv->program, "smooth_lmem", &err);
 	else smooth_k = clCreateKernel(OCLenv->program, "smooth", &err);
+	
 	ocl_check(err, "create kernel smooth");
 
 	// Set preferred_wg size from device info
-	err = clGetKernelWorkGroupInfo(smooth_k, OCLenv->deviceID, CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE, sizeof(preferred_wg_smooth), &preferred_wg_smooth, NULL);
+	err = clGetKernelWorkGroupInfo(
+		smooth_k,
+		OCLenv->deviceID,
+		CL_KERNEL_PREFERRED_WORK_GROUP_SIZE_MULTIPLE,
+		sizeof(preferred_wg_smooth), &preferred_wg_smooth,
+		NULL
+	);
 
 	printf("\n================== KERNEL LAUNCH ===================\n");
 
 	cl_event* smooth_evts = new cl_event[iterations * 2];
+	
 	if (coalescence && localMemory) {
 		for (uint iter = 0; iter<iterations; iter++) {
 			smooth_evts[iter * 2] = smooth_coalescence_lmem(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_result_vertex4_array, nels, lambda, !!iter, smooth_evts + (iter * 2) - 1);
@@ -368,6 +380,14 @@ void Smoothing::execute(uint iterations, float lambda, float mi, const bool writ
 			smooth_evts[iter * 2 + 1] = smooth_coalescence(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_adjsCounter, cl_vertex4_array, nels, mi, 1, smooth_evts + (iter * 2));
 		}
 	}
+	
+	else if (wideLocaMemory) {
+		for (uint iter = 0; iter<iterations; iter++) {
+			smooth_evts[iter * 2] = smooth_lmem_wide(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, !!iter, smooth_evts + (iter * 2) - 1);
+			smooth_evts[iter * 2 + 1] = smooth_lmem_wide(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_vertex4_array, nels, mi, 1, smooth_evts + (iter * 2));
+		}
+	}
+	
 	else if (localMemory) {
 		for (uint iter = 0; iter<iterations; iter++) {
 			smooth_evts[iter * 2] = smooth_lmem(OCLenv->queue, smooth_k, cl_vertex4_array, cl_adjs_array, cl_result_vertex4_array, nels, lambda, !!iter, smooth_evts + (iter * 2) - 1);
@@ -380,7 +400,7 @@ void Smoothing::execute(uint iterations, float lambda, float mi, const bool writ
 			smooth_evts[iter * 2 + 1] = smooth(OCLenv->queue, smooth_k, cl_result_vertex4_array, cl_adjs_array, cl_vertex4_array, nels, mi, 1, smooth_evts + (iter * 2));
 		}
 	}
-
+	
 	// Copy result
 	cl_event copy_evt;
 	float *result_vertex4_array = (float *)clEnqueueMapBuffer(
@@ -417,8 +437,8 @@ void Smoothing::execute(uint iterations, float lambda, float mi, const bool writ
 		printf(" coal smooth time:\t%gms\t%gGB/s\n", meanRuntime_ms,
 			(2.0*memsize + meanAdjsCount * memsize + meanAdjsCount * sizeof(int)*nels + meanAdjsCount * sizeof(int)*nels) / meanRuntime_ns);
 	}
-	else if (localMemory)
-		printf(" lmem smooth time:\t%gms\n", meanRuntime_ms);
+	else if(wideLocaMemory) printf(" wide lmem smooth time:\t%gms\n", meanRuntime_ms);
+	else if (localMemory) printf(" lmem smooth time:\t%gms\n", meanRuntime_ms);
 	else {
 		printf(" smooth time:\t%gms\t%gGB/s\n", meanRuntime_ms,
 			(2.0*memsize + meanAdjsCount * 4 * sizeof(float)*nels + meanAdjsCount * sizeof(int)*nels) / meanRuntime_ns);
@@ -464,6 +484,36 @@ cl_event Smoothing::smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl
 	ocl_check(err, "set smooth arg 3");
 	err = clSetKernelArg(smooth_k, 4, sizeof(factor), &factor);
 	ocl_check(err, "set smooth arg 4");
+
+	err = clEnqueueNDRangeKernel(queue, smooth_k,
+		1, NULL, gws, lws, /* griglia di lancio */
+		waintingSize, waintingSize == 0 ? NULL : waitingList, /* waiting list */
+		&smooth_evt);
+	ocl_check(err, "enqueue kernel smooth");
+	return smooth_evt;
+}
+
+cl_event Smoothing::smooth_lmem_wide(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
+	size_t lws[] = { localWorkSize };
+	size_t gws[] = { round_mul_up(nels, localWorkSize) };
+	cl_event smooth_evt;
+	cl_int err;
+
+	//printf("smooth gws: %d | %zu => %zu\n", nels, preferred_wg_smooth, gws[0]);
+
+	// Setting arguments
+	err = clSetKernelArg(smooth_k, 0, sizeof(cl_vertex4_array), &cl_vertex4_array);
+	ocl_check(err, "set smooth arg 0");
+	err = clSetKernelArg(smooth_k, 1, 2*lws[0] * sizeof(cl_float4), NULL);
+	ocl_check(err, "set smooth arg 1");
+	err = clSetKernelArg(smooth_k, 2, sizeof(cl_adjs_array), &cl_adjs_array);
+	ocl_check(err, "set smooth arg 2");
+	err = clSetKernelArg(smooth_k, 3, sizeof(cl_result_vertex4_array), &cl_result_vertex4_array);
+	ocl_check(err, "set smooth arg 3");
+	err = clSetKernelArg(smooth_k, 4, sizeof(nels), &nels);
+	ocl_check(err, "set smooth arg 4");
+	err = clSetKernelArg(smooth_k, 5, sizeof(factor), &factor);
+	ocl_check(err, "set smooth arg 5");
 
 	err = clEnqueueNDRangeKernel(queue, smooth_k,
 		1, NULL, gws, lws, /* griglia di lancio */
@@ -570,14 +620,14 @@ cl_event Smoothing::smooth_coalescence_lmem(cl_command_queue queue, cl_kernel sm
 void CommandOptions::cmdOptionsHelp()
 {
 	printf(" \n Command parameters:\n");
-	printf(" -p / -platf / -platform       < Es: -p 0 >\n");
-	printf(" -d / -dev   / -device         < Es: -d 0 >\n");
-	printf(" -m / -mesh  / -input          < Es: -m cube_example >\n");
-	printf(" -i / -iter  / -iterations     < Es: -i 1 >\n");
-	printf(" -f / -facts / -factors        < Es: -f 0.22 0.21 >\n");
-	printf(" -w / -write / -b_write        < Es: -w 1 >\n");
-	printf(" -o / -opt   / -options        < Es: -o sortVertex sortAdjs coalescence localMemory>\n");
-	printf(" -g / -l     / -lws            < Es: -g 512 >\n");
+	printf(" -p / -platf / -platform       Es: [-p 0]\n");
+	printf(" -d / -dev   / -device         Es: [-d 0]\n");
+	printf(" -m / -mesh  / -input          Es: [-m cube_example]\n");
+	printf(" -i / -iter  / -iterations     Es: [-i 1]\n");
+	printf(" -f / -facts / -factors        Es: [-f 0.22 0.21]\n");
+	printf(" -w / -write / -b_write        Es: [-w 1]\n");
+	printf(" -o / -opt   / -options        Es: [-o sortVertex sortAdjs coalescence localMemory] or [-o sortAdjs wideLocalMemory]\n");
+	printf(" -g / -l     / -lws            Es: [-g 512]\n");
 	exit(0);
 }
 
@@ -643,6 +693,8 @@ void CommandOptions::cmdOptionsParser(const int argc, const std::vector<std::str
 					kernelOptions |= OptSortAdjs;
 				else if (currentOpt == "coalescence" || currentOpt == "Coalescence" || currentOpt == "coal")
 					kernelOptions |= OptCoalescence;
+				else if (currentOpt == "wideLocalMemory" || currentOpt == "WideLocalMemory" || currentOpt == "wlmem")
+					kernelOptions |= OptWideLocalMemory;
 				else if (currentOpt == "localMemory" || currentOpt == "LocalMemory" || currentOpt == "lmem")
 					kernelOptions |= OptLocalMemory;
 				else { printf(" Wrong value after -options. (use -help)\n"); exit(-1); }

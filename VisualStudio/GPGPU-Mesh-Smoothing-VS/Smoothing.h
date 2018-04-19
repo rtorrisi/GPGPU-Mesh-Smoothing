@@ -16,12 +16,13 @@ private:
 public:
 
 	enum Options {
-		OptNoOption = 0x00, // 0x01 ==   1 == "00000001"
-		OptSortVertex = 0x01, // 0x02 ==   2 == "00000010"
-		OptSortAdjs = 0x02, // 0x04 ==   4 == "00000100"
-		OptCoalescence = 0x04, // 0x08 ==   8 == "00001000"
-		OptLocalMemory = 0x08  // 0x10 ==  16 == "00010000"
-	}; //OptNoOption | OptSortVertex | OptSortAdjs | OptCoalescence | OptLocalMemory
+		OptNoOption		   = 0x00, // 0x00 ==  0 == "00000000"
+		OptSortVertex	   = 0x01, // 0x01 ==  1 == "00000001"
+		OptSortAdjs		   = 0x02, // 0x02 ==  2 == "00000010"
+		OptCoalescence	   = 0x04, // 0x04 ==  4 == "00000100"
+		OptLocalMemory	   = 0x08, // 0x08 ==  8 == "00001000"
+		OptWideLocalMemory = 0x10  // 0x10 == 16 == "00010000"
+	}; //OptNoOption | OptSortVertex | OptSortAdjs | OptCoalescence | OptLocalMemory | OptLocalMemoryWide
 
 	uint platformID;
 	uint deviceID;
@@ -44,7 +45,7 @@ class Smoothing {
 private:
 	size_t preferred_wg_smooth;
 
-	bool sortVertex, sortAdjs, coalescence, localMemory;
+	bool sortVertex, sortAdjs, coalescence, localMemory, wideLocaMemory;
 
 	uint nels, nadjs, minAdjsCount, maxAdjsCount;
 	float meanAdjsCount;
@@ -106,6 +107,8 @@ public:
 	cl_event smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList);
 
 	cl_event smooth_lmem(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList);
+	
+	cl_event smooth_lmem_wide(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList);
 
 	cl_event smooth_coalescence(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_adjsCounter, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList);
 
