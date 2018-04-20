@@ -32,7 +32,7 @@ kernel void smooth(
 
 kernel void smooth_lmem(
 	global const float4 * restrict vertex4_array,
-	local float4 * restrict local_vertex4_array,
+	local float3 * restrict local_vertex3_array,
 	global const unsigned int * restrict adjs_array,
 	global float4 * restrict result_vertex4_array,
 	unsigned int nels, float factor)
@@ -46,13 +46,8 @@ kernel void smooth_lmem(
 	const unsigned int GIxLS = gi*ls;
 	
 	const float4 vertex = vertex4_array[i];
-#if 0
-	local_vertex4_array[li] = vertex.x;
-	local_vertex4_array[li + ls] = vertex.y;
-	local_vertex4_array[li + ls*2] = vertex.z;
-#else
-	local_vertex4_array[li] = vertex;
-#endif
+	//float3 avoid bank conflict in localmemory
+	local_vertex3_array[li] = vertex.xyz;
 
 	barrier(CLK_LOCAL_MEM_FENCE);
 
@@ -70,9 +65,8 @@ kernel void smooth_lmem(
 		local_Adjindex = adj_index - GIxLS;
 		
 		if(local_Adjindex >= 0 &&  local_Adjindex < ls) {//read from local memory
-			current_adj = local_vertex4_array[local_Adjindex];
-			//current_adj.y = local_vertex4_array[local_Adjindex + ls];
-			//current_adj.z = local_vertex4_array[local_Adjindex + ls*2];
+			float3 tmp_vector = local_vertex3_array[local_Adjindex]; 
+			current_adj = (float4)(tmp_vector.x, tmp_vector.y, tmp_vector.z, 0.0f);
 		}
 		else {//read from global memory
 			current_adj = vertex4_array[adj_index];
@@ -94,20 +88,25 @@ kernel void smooth_lmem_wide(
 	unsigned int nels, float factor)
 {
 	const unsigned int i = get_global_id(0);
-	if (i >= nels) return;
 	
-	if(i==0) printf("kernel smooth_lmem_wide\n");
-	
-	/*
 	const unsigned int li = get_local_id(0);
 	const unsigned int ls = get_local_size(0);
 	const unsigned int gi = get_group_id(0);
 	const unsigned int GIxLS = gi * ls;
 
+	const int tmp = i - ls; // if(i-ls >= 0) doesn't work as it should because uint
+	if( tmp >= 0 ) local_vertex4_array[li] = vertex4_array[i-ls];
+
+	if (i >= nels) return;
+
 	const float4 vertex = vertex4_array[i];
-	local_vertex4_array[li] = vertex;
+	local_vertex4_array[li + ls] = vertex;
+
+	if(i + ls < nels) local_vertex4_array[li + 2 * ls] = vertex4_array[i + ls];
 
 	barrier(CLK_LOCAL_MEM_FENCE);
+	
+	
 
 	const float lastComponent = vertex.w;
 	const unsigned int adjsInfo = as_uint(lastComponent);
@@ -117,13 +116,14 @@ kernel void smooth_lmem_wide(
 	float4 current_adj, umbrellaOperator = (float4)(0.0f, 0.0f, 0.0f, 0.0f);
 	unsigned int adj_index;
 	int local_Adjindex;
+	const int limit = 2 * ls;
 	for (int adjIndex = 0; adjIndex<adjsCount; adjIndex++)
 	{
 		adj_index = adjs_array[adjsIndexOffset + adjIndex];
 		local_Adjindex = adj_index - GIxLS;
-
-		if (local_Adjindex >= 0 && local_Adjindex < ls) {//read from local memory
-			current_adj = local_vertex4_array[local_Adjindex];
+		
+		if (local_Adjindex >= -ls && local_Adjindex < limit) {//read from local memory
+			current_adj = local_vertex4_array[local_Adjindex + ls];
 		}
 		else { //read from global memory
 			current_adj = vertex4_array[adj_index];
@@ -134,8 +134,8 @@ kernel void smooth_lmem_wide(
 	umbrellaOperator /= adjsCount;
 	float4 res = vertex + factor * umbrellaOperator;
 	res.w = lastComponent;
+	
 	result_vertex4_array[i] = res;
-*/
 }
 
 kernel void smooth_coalescence(
