@@ -504,7 +504,7 @@ cl_event Smoothing::smooth_lmem_wide(cl_command_queue queue, cl_kernel smooth_k,
 	// Setting arguments
 	err = clSetKernelArg(smooth_k, 0, sizeof(cl_vertex4_array), &cl_vertex4_array);
 	ocl_check(err, "set smooth arg 0");
-	err = clSetKernelArg(smooth_k, 1, 3*lws[0] * sizeof(cl_float4), NULL);
+	err = clSetKernelArg(smooth_k, 1, 3*lws[0] * sizeof(cl_float3), NULL);
 	ocl_check(err, "set smooth arg 1");
 	err = clSetKernelArg(smooth_k, 2, sizeof(cl_adjs_array), &cl_adjs_array);
 	ocl_check(err, "set smooth arg 2");
