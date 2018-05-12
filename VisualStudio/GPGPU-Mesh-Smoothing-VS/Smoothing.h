@@ -34,11 +34,12 @@ public:
 	char kernelOptions;
 	uint lws;
 
+	CommandOptions();
 	CommandOptions(const int argc, const std::vector<std::string> argv);
 
 	void initCmdOptions();
 
-	void cmdOptionsParser(const int argc, const std::vector<std::string> argv);
+	bool cmdOptionsParser(const int argc, const std::vector<std::string> argv);
 };
 
 class Smoothing {
@@ -82,7 +83,7 @@ public:
 
 	void parseBitFlags(const unsigned char flagsOpt);
 
-	Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj, const unsigned char flagsOpt, const uint localWorkSize);
+	Smoothing(const OpenCLEnvironment * OCLenv, const unsigned char flagsOpt, const uint localWorkSize);
 
 	~Smoothing();
 
@@ -100,7 +101,7 @@ public:
 
 	void fillOrderedVertexAdjsArray(vertex_struct** orderedVertex_arrayStruct, const bool coalescence);
 
-	void init();
+	bool init(OBJ *obj);
 
 	void execute(uint iterations, float lambda, float mi, const bool writeOBJ);
 

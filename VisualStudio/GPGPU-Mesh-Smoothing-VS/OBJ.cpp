@@ -7,7 +7,7 @@ OBJ::OBJ(std::string path)
 {
 	obj_path = path;
 	init();
-	load(obj_path);
+	validData = load(obj_path);
 }
 
 OBJ::~OBJ() { clear(); }
@@ -67,7 +67,9 @@ bool OBJ::load(std::string path)
 	START_TIMER;
 
 	std::ifstream in;
-	in.open(path); //TO-DO check that file exists
+	in.open(path);
+	
+	if (in.fail()) return false;
 
 	std::stringstream ss;
 	ss << in.rdbuf();
@@ -121,7 +123,6 @@ bool OBJ::load(std::string path)
 	}
 
 	PRINT_ELAPSED_TIME("load OBJ", ELAPSED_TIME);
-	validData = true;
 	return true;
 }
 
@@ -155,5 +156,8 @@ bool OBJ::write(std::string out_path)
 
 bool OBJ::hasValidData() const { return validData; }
 std::string OBJ::getPathName() const { return obj_path; }
+
 uint OBJ::getVerticesCount() const { return verticesCount; }
 uint OBJ::getFacesCount() const { return facesCount; }
+uint OBJ::getNormalsCount() const { return normalsCount; }
+uint OBJ::getUVsCount() const { return uvsCount; }

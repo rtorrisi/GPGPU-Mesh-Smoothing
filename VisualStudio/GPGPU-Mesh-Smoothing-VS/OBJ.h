@@ -36,12 +36,15 @@ public:
 	void clear();
 
 	bool load(std::string path);
-
 	bool write(std::string out_path);
 
 	bool hasValidData() const;
+	
 	std::string getPathName() const;
+
 	uint getVerticesCount() const;
 	uint getFacesCount() const;
+	uint getNormalsCount() const;
+	uint getUVsCount() const;
 };
 

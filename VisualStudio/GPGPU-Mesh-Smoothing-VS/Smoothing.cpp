@@ -6,20 +6,16 @@
 #include <iostream>
 #include <algorithm>
 
-#define OCL_PLATFORM 1
+#define OCL_PLATFORM 0
 #define OCL_DEVICE 0
 
 #define WRESTLERS "res/wrestlers.obj"
 #define SUZANNE "res/suzanne.obj"
-#define EGYPT "res/egypt.obj"
-#define DRAGON "res/dragon.obj"
 #define HUMAN "res/human.obj"
-#define TEST "res/test.obj"
 #define CUBE "res/cube_example.obj"
-#define NOISECUBE "res/cube_noise.obj"
 
-#define IN_MESH SUZANNE
-#define OUT_MESH "res/out.obj"
+#define IN_MESH WRESTLERS
+#define OUT_MESH "out.obj"
 
 bool Smoothing::orderedUniqueInsert(std::vector< uint >*vertexAdjacents, const uint vertexID) {
 	std::vector< uint >::iterator it;
@@ -41,20 +37,18 @@ void Smoothing::parseBitFlags(const unsigned char flagsOpt) {
 	sortAdjs = (flagsOpt & CommandOptions::Options::OptSortAdjs);
 }
 
-Smoothing::Smoothing(const OpenCLEnvironment* OCLenv, OBJ* obj, const unsigned char flagsOpt, const uint localWorkSize) {
+Smoothing::Smoothing(const OpenCLEnvironment* OCLenv, const unsigned char flagsOpt, const uint localWorkSize) {
 	this->OCLenv = OCLenv;
 	this->localWorkSize = localWorkSize;
-	this->obj = new OBJ(*obj);
+	obj = nullptr;
 	obj_adjacents_arrayVector = nullptr;
 	vertex4_array = nullptr;
 	adjs_array = nullptr;
 	adjCounter_array = nullptr;
 	parseBitFlags(flagsOpt);
-	init();
 }
 
 Smoothing::~Smoothing() {
-	if (obj != nullptr) { delete obj; }
 	if (vertex4_array != nullptr) { delete[]vertex4_array; }
 	if (adjs_array != nullptr) { delete[]adjs_array; }
 	if (obj_adjacents_arrayVector != nullptr) { delete[]obj_adjacents_arrayVector; }
@@ -277,21 +271,17 @@ void Smoothing::fillOrderedVertexAdjsArray(vertex_struct** orderedVertex_arraySt
 	PRINT_ELAPSED_TIME("fillOrderedVertexAdjsArray", ELAPSED_TIME);
 }
 
-void Smoothing::init() {
+bool Smoothing::init(OBJ *obj) {
 	printf("\n===================== INIT DATA ====================\n");
 	printf(" > Initializing data...\n");
 
-	nels = nadjs = minAdjsCount = maxAdjsCount = 0;
-	meanAdjsCount = 0.0f;
-
-	if (obj == nullptr || !obj->hasValidData()) {
-		printf(" Error: Smoothing(OBJ) -> obj null or invalid data");
-		exit(-1);
-	}
+	if (obj == nullptr || !obj->hasValidData()) return false;
+	
+	this->obj = obj;
 
 	nels = obj->getVerticesCount();
 	nadjs = discoverAdjacents(sortAdjs);
-
+	minAdjsCount = maxAdjsCount = 0;
 	meanAdjsCount = nadjs / (float)nels;
 	//-----------------------------------
 	vertex4_array = new float[4 * nels];
@@ -314,6 +304,8 @@ void Smoothing::init() {
 		fillVertex4Array(vertex4_array);
 		fillVertexAdjsArray();
 	}
+
+	return true;
 }
 
 void Smoothing::execute(uint iterations, float lambda, float mi, const bool writeOBJ) {
@@ -446,8 +438,7 @@ void Smoothing::execute(uint iterations, float lambda, float mi, const bool writ
 
 	printf(" copy time:\t%gms\t%gGB/s\n", runtime_ms(copy_evt), (2.0*memsize) / runtime_ns(copy_evt));
 
-	printf(" kernels total time \t%gms\n", totalRuntime_ms);
-	printf(" ~ %g smooth pass(es)/sec\n", (iterations * 2) / (totalRuntime_ms / 1.0e3));
+	printf(" kernels total time: \t%gms     smooth pass(es)/sec: ~%g\n", totalRuntime_ms, (iterations * 2)/(totalRuntime_ms / 1.0e3));
 
 	if (writeOBJ) obj->write(OUT_MESH);
 
@@ -463,6 +454,7 @@ void Smoothing::execute(uint iterations, float lambda, float mi, const bool writ
 		ocl_check(err, "clReleaseMemObject cl_adjsCounter");
 	}
 
+	printf("\n@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
 }
 
 cl_event Smoothing::smooth(cl_command_queue queue, cl_kernel smooth_k, cl_mem cl_vertex4_array, cl_mem cl_adjs_array, cl_mem cl_result_vertex4_array, cl_uint nels, cl_float factor, cl_int waintingSize, cl_event* waitingList) {
@@ -622,13 +614,18 @@ void CommandOptions::cmdOptionsHelp()
 	printf(" \n Command parameters:\n");
 	printf(" -p / -platf / -platform       Es: [-p 0]\n");
 	printf(" -d / -dev   / -device         Es: [-d 0]\n");
-	printf(" -m / -mesh  / -input          Es: [-m cube_example]\n");
+	printf(" -m / -mesh  / -input          Es: [-m res/cube_example.obj]\n");
 	printf(" -i / -iter  / -iterations     Es: [-i 1]\n");
 	printf(" -f / -facts / -factors        Es: [-f 0.22 0.21]\n");
 	printf(" -w / -write / -b_write        Es: [-w 1]\n");
 	printf(" -o / -opt   / -options        Es: [-o sortVertex sortAdjs coalescence localMemory] or [-o sortAdjs wideLocalMemory]\n");
 	printf(" -g / -l     / -lws            Es: [-g 512]\n");
 	exit(0);
+}
+
+CommandOptions::CommandOptions()
+{
+	initCmdOptions();
 }
 
 CommandOptions::CommandOptions(const int argc, const std::vector<std::string> argv)
@@ -650,23 +647,23 @@ void CommandOptions::initCmdOptions()
 	lws = 32;
 }
 
-void CommandOptions::cmdOptionsParser(const int argc, const std::vector<std::string> argv)
+bool CommandOptions::cmdOptionsParser(const int argc, const std::vector<std::string> argv)
 {
 	if (argc == 1) {
 		std::string str = argv[0];
 		if (str == "-h" || str == "-help") cmdOptionsHelp();
-		else { printf(" Missing -parameter specification. (use -help)\n"); exit(-1); }
+		else { printf(" Missing -parameter specification. (use -help)\n"); return false; }
 	}
 
 	for (int i = 0; i<argc; i += 2) {
-		if (i == argc - 1) { printf(" Wrong -parameters. (use -help)\n"); exit(-1); }
+		if (i == argc - 1) { printf(" Wrong -parameters. (use -help)\n"); return false; }
 		std::string param = argv[i];
 		std::string value = argv[i + 1];
 
-		if (param[0] != '-') { printf(" Missing -parameter specification. (use -help)\n"); exit(-1); }
-		if (value[0] == '-') { printf(" Missing value after -parameter. (use -help)\n"); exit(-1); }
+		if (param[0] != '-') { printf(" Missing -parameter specification. (use -help)\n"); return false; }
+		if (value[0] == '-') { printf(" Missing value after -parameter. (use -help)\n"); return false; }
 
-		if (param == "-m" || param == "-mesh") input_mesh = "res/" + value + ".obj";
+		if (param == "-m" || param == "-mesh") input_mesh = value;
 		else if (param == "-d" || param == "-dev" || param == "-device") deviceID = stoi(value);
 		else if (param == "-p" || param == "-plat" || param == "-platform") platformID = stoi(value);
 		else if (param == "-i" || param == "-iter" || param == "-iterations") iterations = stoi(value);
@@ -697,12 +694,14 @@ void CommandOptions::cmdOptionsParser(const int argc, const std::vector<std::str
 					kernelOptions |= OptWideLocalMemory;
 				else if (currentOpt == "localMemory" || currentOpt == "LocalMemory" || currentOpt == "lmem")
 					kernelOptions |= OptLocalMemory;
-				else { printf(" Wrong value after -options. (use -help)\n"); exit(-1); }
+				else { printf(" Wrong value after -options. (use -help)\n"); return false; }
 				i++;
 			}
 			i--;
 		}
 		else if (param == "-g" || param == "-l" || param == "-lws") lws = stoi(value);
-		else { printf(" Wrong -parameter. (use -help)\n"); exit(-1); }
+		else { printf(" Wrong -parameter. (use -help)\n"); return false; }
 	}
+
+	return true;
 }
