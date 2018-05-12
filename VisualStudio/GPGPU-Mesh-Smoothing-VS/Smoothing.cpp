@@ -9,12 +9,10 @@
 #define OCL_PLATFORM 0
 #define OCL_DEVICE 0
 
-#define WRESTLERS "res/wrestlers.obj"
-#define SUZANNE "res/suzanne.obj"
-#define HUMAN "res/human.obj"
+//#define WRESTLERS "res/wrestlers.obj"
 #define CUBE "res/cube_example.obj"
 
-#define IN_MESH WRESTLERS
+#define IN_MESH CUBE
 #define OUT_MESH "out.obj"
 
 bool Smoothing::orderedUniqueInsert(std::vector< uint >*vertexAdjacents, const uint vertexID) {

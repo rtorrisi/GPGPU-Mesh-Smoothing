@@ -6,8 +6,8 @@
 #folder to ignore
 Smoothing_Papers
 papers
+OBJ
 doc
-res
 Meshes_Reference
 
 ## Ignore Visual Studio temporary files, build results, and
@@ -61,7 +61,6 @@ artifacts/
 *_i.h
 *.ilk
 *.meta
-*.obj
 *.pch
 *.pdb
 *.pgc
