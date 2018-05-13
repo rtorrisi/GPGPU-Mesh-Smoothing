@@ -666,15 +666,12 @@ bool CommandOptions::cmdOptionsParser(const int argc, const std::vector<std::str
 		else if (param == "-p" || param == "-plat" || param == "-platform") platformID = stoi(value);
 		else if (param == "-i" || param == "-iter" || param == "-iterations") iterations = stoi(value);
 		else if (param == "-f" || param == "-facts" || param == "-factors") {
-			std::string factor1 = argv[i + 1];
-			std::string factor2;
-			lambda = stof(factor1);
+			lambda = stof(argv[i + 1]);
 			if (i + 2 < argc && (argv[i + 2][0] >= '0' && argv[i + 2][0] <= '9')) {
-				factor2 = argv[i + 2];
-				mi = -stof(factor2);
+				mi = -stof(argv[i + 2]);
 				i++;
 			}
-			else mi = -lambda;
+			else mi = lambda;
 		}
 		else if (param == "-w" || param == "-write" || param == "-b_write") writeObj = !!stoi(value);
 		else if (param == "-o" || param == "-opt" || param == "-options") {

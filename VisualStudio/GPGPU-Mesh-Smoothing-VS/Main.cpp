@@ -13,12 +13,15 @@ typedef unsigned int uint;
 OBJ * validateOBJInput(std::string & input_mesh_path) {
 	OBJ *newOBJ = nullptr;
 
+	std::string input;
 	while (newOBJ == nullptr || !newOBJ->hasValidData()) {
 		if (newOBJ != nullptr) {
 			delete newOBJ;
 			std::cout << "Error: .obj load failed.\n";
-			std::cout << "Insert a different file path: ";
-			getline(std::cin, input_mesh_path);
+			std::cout << "Insert a different file path or exit (-exit or -e): ";
+			getline(std::cin, input);
+			if (input == "-exit" || input == "-e" || input == "exit") exit(0);
+			else input_mesh_path = input;
 		}
 		newOBJ = new OBJ(input_mesh_path);
 	}
